@@ -10,5 +10,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fopenmp")
 set(CMAKE_CXX_STANDARD 14)
 
 add_executable(HPPZellautomat main.cpp)
+add_executable(HPPZellautomatV1 mainV1.cpp)
 # Add libraries for code completion and compiling
 target_link_libraries(HPPZellautomat PUBLIC MPI::MPI_CXX)
+target_link_libraries(HPPZellautomatV1 PUBLIC MPI::MPI_CXX)

@@ -5,8 +5,8 @@
 #include <cmath>
 #include <assert.h>
 
-#define GRID_SIZE 20 // lege die größe des grids fest
-#define numb_iterations 2
+#define GRID_SIZE 5 // lege die größe des grids fest
+#define numb_iterations 4
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -263,10 +263,13 @@ void initializeGrid(int ***Matrix, int SubGridSize) {
     for (int i = 0; i < SubGridSize; ++i) {
         for (int j = 0; j < SubGridSize; ++j) {
             rand_num = rand() % 16; // Zufälliger Zustand (0 bis 15) für alle möglichen Binärzustände, siehe Zustandsübergangstabelle
-            Matrix[i][j][0] = rand_num;
-            Matrix[i][j][1] = rand_num;
+            Matrix[i][j][0] = 0; //rand_num;
+            Matrix[i][j][1] = 0; //rand_num;
         }
     }
+    Matrix[int(SubGridSize/2)][int(SubGridSize/2)][0] = S;
+    Matrix[int(SubGridSize/2)][int(SubGridSize/2)][1] = S;
+
 }
 
 void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW) {
@@ -277,16 +280,16 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW) {
     for (i = 0; i < SubGridSize; ++i) {
         for (j = 0; j < SubGridSize; ++j) {
             if (Matrix[i][j][OLD] & N && i > 0) Matrix[i-1][j][NEW] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & N && i == 0) Matrix[i+1][j][NEW] |= S; // if hitting a frame flied bounce back
+            if (Matrix[i][j][OLD] & N && i == 0) Matrix[SubGridSize-1][j][NEW] |= N; // if hitting a frame periodic
 
             if (Matrix[i][j][OLD] & S && i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & S && i == SubGridSize - 1) Matrix[i-1][j][NEW] |= N; // if hitting a frame flied bounce back
+            if (Matrix[i][j][OLD] & S && i == SubGridSize - 1) Matrix[0][j][NEW] |= S; // if hitting a frame periodic
 
             if (Matrix[i][j][OLD] & W && j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & W && j == 0) Matrix[i][j+1][NEW] |= E;  // if hitting a frame flied bounce back
+            if (Matrix[i][j][OLD] & W && j == 0) Matrix[i][SubGridSize-1][NEW] |= W;  // if hitting a frame periodic
 
             if (Matrix[i][j][OLD] & E && j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & E && j == SubGridSize - 1) Matrix[i][j-1][NEW] |= W; // if hitting a frame flied bounce back
+            if (Matrix[i][j][OLD] & E && j == SubGridSize - 1) Matrix[i][0][NEW] |= E; // if hitting a frame periodic
 
         }
     }
