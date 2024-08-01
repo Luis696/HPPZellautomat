@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #define GRID_SIZE 5 // lege die größe des grids fest
-#define numb_iterations 4
+#define numb_iterations 10
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -35,9 +35,8 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW);
 void handleCollisions(int ***Matrix, int SubGridSize, int OLD, int NEW);
 void printGrid(int ***Matrix, int GridSize, int layer);
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename);
-void share_edges(int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
-                 int *send_top_edge, int *recv_top_edge, int *send_bottom_edge, int *recv_bottom_edge,
-                 int *send_left_edge, int *recv_left_edge, int *send_right_edge, int *recv_right_edge);
+void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
+                 int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge);
 
 
 int main(int argc, char** argv) {
@@ -73,19 +72,15 @@ int main(int argc, char** argv) {
     create_matrix(&SubMatrix,subGridSize,subGridSize,2);
     printf("created SubGrid processor %s ... \n",processor_name);
     // Allocate the edge buffers
-    int *send_top_edge = NULL, *recv_top_edge= NULL;
-    int *send_bottom_edge= NULL, *recv_bottom_edge= NULL;
-    int *send_left_edge= NULL, *recv_left_edge= NULL;
-    int *send_right_edge= NULL, *recv_right_edge= NULL;
+    int *top_edge_roll_over = NULL, *bottom_edge_roll_over= NULL;
+    int *left_edge= NULL, *right_edge= NULL;
 
-    create_vector(&send_top_edge, subGridSize);
-    create_vector(&recv_top_edge, subGridSize);
-    create_vector(&send_bottom_edge, subGridSize);
-    create_vector(&recv_bottom_edge, subGridSize);
-    create_vector(&send_left_edge, subGridSize);
-    create_vector(&recv_left_edge, subGridSize);
-    create_vector(&send_right_edge, subGridSize);
-    create_vector(&recv_right_edge, subGridSize);
+
+    create_vector(&top_edge_roll_over, subGridSize);
+    create_vector(&bottom_edge_roll_over, subGridSize);
+    create_vector(&left_edge, subGridSize);
+    create_vector(&right_edge, subGridSize);
+
     // allocate the global matrix
     int ***GlobalMatrix = NULL;  //
     if (my_id == 0) {
@@ -191,8 +186,8 @@ int main(int argc, char** argv) {
         moveParticles(SubMatrix, subGridSize, val1, val2 );  // bewege alle Partikel entlang der Richtung
         handleCollisions(SubMatrix, subGridSize, val1, val2); // check for collions in the new grid
          // Teilen der Randwerte mit den benachbarten Prozessoren
-        share_edges(SubMatrix, subGridSize, val2, above, below, left, right, send_top_edge, recv_top_edge, send_bottom_edge, recv_bottom_edge,
-                    send_left_edge, recv_left_edge, send_right_edge, recv_right_edge);
+        share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
+                    left_edge, right_edge);
         // print resulting grid to console:
         printf("New Grid after step %d:\n", step + 1);
         printGrid(SubMatrix, subGridSize, val2);
@@ -238,14 +233,10 @@ int main(int argc, char** argv) {
         destroy_matrix(&GlobalMatrix, subGridSize*processorGridSize, 2);
         printf("Global Matrix of processor %s succesfully destroyed... \n",processor_name);
     }
-    destroy_vector(&send_top_edge);
-    destroy_vector(&send_bottom_edge);
-    destroy_vector(&send_left_edge);
-    destroy_vector(&send_right_edge);
-    destroy_vector(&recv_top_edge);
-    destroy_vector(&recv_bottom_edge);
-    destroy_vector(&recv_left_edge);
-    destroy_vector(&recv_right_edge);
+    destroy_vector(&top_edge_roll_over);
+    destroy_vector(&bottom_edge_roll_over);
+    destroy_vector(&left_edge);
+    destroy_vector(&right_edge);
     printf("vectors of processor %s succesfully destroyed... \n",processor_name);
 
     return 0;
@@ -417,57 +408,70 @@ void destroy_vector(int **vector) {
     *vector = NULL;
 }
 
-void share_edges(int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right, int *send_top_edge, int *recv_top_edge, int *send_bottom_edge, int *recv_bottom_edge,
-                 int *send_left_edge, int *recv_left_edge, int *send_right_edge, int *recv_right_edge) {
-    MPI_Status status;
+
+void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
+                 int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge) {
 
     // -------------------------------- Ränder übergeben -----------------------------
-    // entnehme oberen und unteren  Rand aus der Matrix
+    // entnehme oberen und unteren Rand aus der Matrix
 # pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
-        send_top_edge[i] = Matrix[0][i][NEW];// erste Zeile alle Spalten von NEW
-        send_bottom_edge[i] = Matrix[SubGridSize - 1][i][NEW]; // letze Zeile alle Spalten von NEW
+        top_edge_roll_over[i] = Matrix[0][i][NEW]; // erste Zeile alle Spalten von NEW
+        bottom_edge_roll_over[i] = Matrix[SubGridSize - 1][i][NEW]; // letzte Zeile alle Spalten von NEW
     }
 
-    // Sende oberen Rand und empfange obere Rand von prozessor unter dir -> damit unser neuer unterer Rand
-    MPI_Sendrecv(send_top_edge, SubGridSize, MPI_INT, above, 0,
-                 recv_bottom_edge, SubGridSize, MPI_INT, below, 0,
-                 MPI_COMM_WORLD, &status);
-
-    // Sende unteren Rand und empfange unteren Rand von Prozessor über dir -> damit unser neuer oberer Rand
-    MPI_Sendrecv(send_bottom_edge, SubGridSize, MPI_INT, below, 0,
-                 recv_top_edge, SubGridSize, MPI_INT, above, 0,
-                 MPI_COMM_WORLD, &status);
-
-    // Kopiere empfangene vector Daten in die Matrix
+    // Alle Subgrids reichen ihren oberen rand weiter and das Subgrid über ihnen:
+    // source my_id: Subgrid das seinen oberen Rand weitereicht
+    // destination: Subgrid das den oberen Rand von dem Subgrid unter Ihm erhält
+    MPI_Sendrecv_replace(top_edge_roll_over, SubGridSize, MPI_INT, above, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // Der Processor hat den oberen Rand von dem Subgrid unter Ihm empfangen und speichert ihn in die unterste Zeile
+    // damit wird top_edge_roll_over ersetze durch den oberen Rand des subgrids unter uns -> unser unterer Rand
+    // Kopiere empfangene Daten in die Matrix
 # pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
-        Matrix[0][i][NEW] = recv_top_edge[i];
-        Matrix[SubGridSize - 1][i][NEW] = recv_bottom_edge[i];
+        Matrix[SubGridSize - 1][i][NEW] = top_edge_roll_over[i]; // unterer Rand
     }
 
-    // entnehme rechten und linken Rand aus der Matrix
+    // Alle Subgrids reichen ihren unteren rand weiter and das Subgrid unter ihnen:
+    // source my_id: Subgrid das seinen unteren Rand weiterreicht
+    // destination below: Subgrid das den unteren Rand von dem Subgrid über Ihm erhält
+    MPI_Sendrecv_replace(bottom_edge_roll_over, SubGridSize, MPI_INT, below, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // Der Processor hat den unteren Rand von dem Subgrid über Ihm empfangen und speichert ihn in die oberste Zeile
+    // damit wird bottom_edge_roll_over ersetze durch den unteren Rand des subgrids über uns -> unser neuer oberer Rand
+    // Kopiere empfangene Daten in die Matrix
 # pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
-        send_left_edge[i] = Matrix[i][0][NEW];
-        send_right_edge[i] = Matrix[i][SubGridSize - 1][NEW];
+        Matrix[0][i][NEW] = bottom_edge_roll_over[i]; // oberer Rand
     }
 
-    // Sende linken Rand und empfange von rechtem Processor --> damit unser neuer rechter Rand
-    MPI_Sendrecv(send_left_edge, SubGridSize, MPI_INT, left, 0,
-                 recv_right_edge, SubGridSize, MPI_INT, right, 0,
-                 MPI_COMM_WORLD, &status);
 
-    // Sende rechten Rand und empfange von linkem processor rechten Rand ---> damit unser neuer linker Rand
-    MPI_Sendrecv(send_right_edge, SubGridSize, MPI_INT, right, 0,
-                 recv_left_edge, SubGridSize, MPI_INT, left, 0,
-                 MPI_COMM_WORLD, &status);
-
-    //  Kopiere empfangene vector Daten zurück in die Matrix
 # pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
-        Matrix[i][0][NEW] = recv_left_edge[i]; // erste Spalte alle Zeilen -> linker Rand
-        Matrix[i][SubGridSize - 1][NEW] = recv_right_edge[i]; // letze Spalte alle Zeilen -> rechter Rand
+        left_edge[i] = Matrix[i][0][NEW];
+        right_edge[i] = Matrix[i][SubGridSize - 1][NEW];
     }
 
+    // Sende linken Rand und empfange linken Rand von rechtem Prozessor -> damit unser neuer rechter Rand
+    // Alle Subgrids reichen ihren linken Rand weiter and das Subgrid rechts neben Ihnen:
+    // source my_id: Subgrid das seinen linken Rand weiterreicht
+    // destination below: Subgrid das den linken Rand von dem Subgrid rechts neben Ihm erhält
+    MPI_Sendrecv_replace(left_edge, SubGridSize, MPI_INT, left, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // damit wird left_edge ersetze durch den linken rand des subgrids rechts neben uns -> unser neuer rechter Rand
+    // Kopiere empfangene Daten in die Matrix
+# pragma omp parallel for
+    for (int i = 0; i < SubGridSize; ++i) {
+        Matrix[i][SubGridSize - 1][NEW] = left_edge[i]; // rechter Rand
+    }
+
+    // Sende rechten Rand und empfange rechten Rand von linkem Prozessor -> damit unser neuer linker Rand
+    // Alle Subgrids reichen ihren rechten Rand weiter and das Subgrid rechts neben Ihnen:
+    // source my_id: Subgrid das seinen rechten Rand weiterreicht
+    // destination below: Subgrid das den rechten Rand von dem Subgrid links neben ihm erhält
+    MPI_Sendrecv_replace(right_edge, SubGridSize, MPI_INT, right, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // damit wird right_edge ersetze durch den rechten rand des subgrids links neben uns -> unser neuer linker Rand
+    // Kopiere empfangene Daten in die Matrix
+# pragma omp parallel for
+    for (int i = 0; i < SubGridSize; ++i) {
+        Matrix[i][0][NEW] = right_edge[i]; // linker Rand
+    }
 }
