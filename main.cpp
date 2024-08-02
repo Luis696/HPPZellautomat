@@ -13,6 +13,7 @@
 #define S 8 // 1000
 #define W 1 // 0001
 #define E 4 // 0100
+char filename[30]; // Puffer für den Dateinamen, ausreichend groß
 
 /* mögliche Zustände der Zelle:
  * 0010  2  1001  9  1011 11
@@ -39,33 +40,33 @@ void printGrid(int ***Matrix, int GridSize, int layer);
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename);
 void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
                  int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge);
+void gatherSubgrids(int *** own_SubMatrix, int subGridSize, int ***GlobalMatrix, int num_procs, int processorGridSize, const char *filename);
 
 
 int main(int argc, char** argv) {
+     printf("\n\n--------- Environmet settings:---------- \n");
+     // ---------------  Initialize the MPI Environment:
+     MPI_Status status;
+     MPI_Init(&argc, &argv);
+     // Get the number of processes avaiable
+     int num_procs;
+     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+     int processorGridSize = sqrt(num_procs);
+     // Get the id of the process
+     int my_id;
+     MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
+     // Get the name of the processor
+     char processor_name[MPI_MAX_PROCESSOR_NAME];
+     int name_len;
+     MPI_Get_processor_name(processor_name, &name_len);
 
-    printf("\n\n--------- Environmet settings:---------- \n");
-    // ---------------  Initialize the MPI Environment:
-    MPI_Status status;
-    MPI_Init(&argc, &argv);
-    // Get the number of processes avaiable
-    int num_procs;
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    int processorGridSize = sqrt(num_procs);
-    // Get the id of the process
-    int my_id;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
-    // Get the name of the processor
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int name_len;
-    MPI_Get_processor_name(processor_name, &name_len);
-
-    // -------------- Initialize the OpenMP Environment:
-    int num_of_threads = 1;
-    //num_of_threads = omp_get_max_threads();
-    printf("- OpenMP max threads %i \n",num_of_threads);
-    omp_set_num_threads(num_of_threads);
-    printf("--------------- finished -----------------\n\n");
-    // -------------------------------------------------
+    // // -------------- Initialize the OpenMP Environment:
+    // int num_of_threads = 1;
+    // //num_of_threads = omp_get_max_threads();
+    // printf("- OpenMP max threads %i \n",num_of_threads);
+    // omp_set_num_threads(num_of_threads);
+    // printf("--------------- finished -----------------\n\n");
+    // // -------------------------------------------------
 
     // allocate Vectors for send recv edges:
     int subGridSize  = GRID_SIZE / num_procs;
@@ -95,12 +96,12 @@ int main(int argc, char** argv) {
 
     // Bestimme ob die Subgrids welche die Ränder Bilden. Weise den Subgrids entsprechend Ihrer Randposition einen Wert.
     // Ecken haben Ränder in zwei Richtungen:
-        // linke obere Ecke: N & W = 1+2 = 3
-        // rechte obere Ecke: N & E = 2+4 = 6
-        // rechte untere Ecke: O & S = 4+8 = 12
-        // linke untere Ecke: S & W = 8+1 = 9
+    //     linke obere Ecke: N & W = 1+2 = 3
+    //     rechte obere Ecke: N & E = 2+4 = 6
+    //     rechte untere Ecke: O & S = 4+8 = 12
+    //     linke untere Ecke: S & W = 8+1 = 9
     // Keine Randposition = 0
-
+    //
     // Bestimme die Zeile und Spalte des aktuellen Prozessors im Gesamtgrid
     int row = my_id / processorGridSize;
     int col = my_id % processorGridSize;
@@ -158,8 +159,8 @@ int main(int argc, char** argv) {
 
 
     initializeGrid(SubMatrix, subGridSize); // fill grid with random numbers
-    SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
-    SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
+    // SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
+    // SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
 
     // print the initial grid to console & saving it
     printf("Initial grid layer 0:\n");
@@ -168,33 +169,10 @@ int main(int argc, char** argv) {
     printGrid(SubMatrix, subGridSize, 1);
 
     // saveGridToFile(grid, "grid_0.txt");
-    int val1, val2 = 0;
-
+    sprintf(filename, "../Grids/grid_start.txt");
     // sending all subgrids to process 0 so it can fill the main grid with it:
     if (my_id == 0) {
-        // schreibe mein eigenes subgrid in Global Matrix (process 0's subgrid)
-        int i,j;
-#pragma omp parallel for private(j)
-        for (i = 0; i < subGridSize; ++i) {
-            for (j = 0; j < subGridSize; ++j) {
-                GlobalMatrix[i][j][0] = SubMatrix[i][j][0];
-            }
-        }
-
-        for (int p = 1; p < num_procs; ++p) {
-            // get the starting positions for the process in the Global Matrix to store its Submatrix
-            int start_row = (p / processorGridSize) * subGridSize;
-            int start_col = (p % processorGridSize) * subGridSize;
-            // receiving submatrices from processes
-            MPI_Recv(&(GlobalMatrix[start_row][start_col][0]), subGridSize * subGridSize, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-        // print resulting grid to console:
-        printf("starting Grid to save: \n");
-        printGrid(GlobalMatrix, subGridSize*processorGridSize, 0);  // layer 1 will be the result !!!!
-        char filename[20]; // erzeuge array of chars um Dateinamen zu speichern
-        sprintf(filename, "starting_grid.txt"); // generiere Dateiname und speichere ihn ab
-        saveGridToFile(GlobalMatrix,subGridSize*processorGridSize,0, filename); // erzeuge eine .txt datei mit Dateiname und speichere darin das grid des aktuellen standes ab
-
+        gatherSubgrids(SubMatrix, subGridSize, GlobalMatrix, num_procs, processorGridSize, filename); // gather all subgrids and write it to a file
     }
     else {
         // send your submatrix
@@ -204,77 +182,82 @@ int main(int argc, char** argv) {
     // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
     MPI_Barrier(MPI_COMM_WORLD);
 
-    // ------------------------------------------------ start the itteration of the grid: -----------------------------------------------
 
-    for (int step = 0; step < numb_iterations; ++step) {
-        int val1 = step % 2; // alternate depending on the step
-        int val2 = 1 - val1; // inverse of val1
-        /*  step = 0, val1 = 0, val2 = 1
-            step = 1, val1 = 1, val2 = 0
-            step = 2, val1 = 0, val2 = 1
-            step = 3, val1 = 1, val2 = 0
-            step = 4, val1 = 0, val2 = 1
-         */
-        printf("value1: %i,  value2: %i \n",val1,val2);
-        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
-        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
-        moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
-        //  // Teilen der Randwerte mit den benachbarten Prozessoren
-        // share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
-        //             left_edge, right_edge);
-        // print resulting grid to console:
-        printf("New Grid after step %d:\n", step + 1);
-        printGrid(SubMatrix, subGridSize, val2);
-    }
+    int val1, val2 = 0;
+    // // ------------------------------------------------ start the itteration of the grid: -----------------------------------------------
+    //
+    // for (int step = 0; step < numb_iterations; ++step) {
+    //     // Erzeuge den Dateinamen mit der Iterationsnummer
+    //     sprintf(filename, "data_%i.txt", step);
+    //     int val1 = step % 2; // alternate depending on the step
+    //     int val2 = 1 - val1; // inverse of val1
+    //     /*  step = 0, val1 = 0, val2 = 1
+    //         step = 1, val1 = 1, val2 = 0
+    //         step = 2, val1 = 0, val2 = 1
+    //         step = 3, val1 = 1, val2 = 0
+    //         step = 4, val1 = 0, val2 = 1
+    //      */
+    //     printf("value1: %i,  value2: %i \n",val1,val2);
+    //     // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
+    //     handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
+    //     moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
+    //     //  // Teilen der Randwerte mit den benachbarten Prozessoren
+    //     // share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
+    //     //             left_edge, right_edge);
+    //     // print resulting grid to console:
+    //     printf("New Grid after step %d:\n", step + 1);
+    //     printGrid(SubMatrix, subGridSize, val1);
+    //
+    //
+    //     // sending all subgrids to process 0 so it can fill the main grid with it:
+    //     // saveGridToFile(grid, "grid_0.txt");
+    //     sprintf(filename, "../Grids/grid_%i.txt",step);
+    //     if (my_id == 0) {
+    //         gatherSubgrids(SubMatrix, subGridSize, GlobalMatrix, num_procs, processorGridSize, filename); // gather all subgrids and write it to a file
+    //     }
+    //     else {
+    //         // send your submatrix
+    //         MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    //     }
+    //
+    //     // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    // }
+    // // ---------------------------------------------------- finished the itteration of the grid: ----------------------------------
+    //
+    // sprintf(filename, "../Grids/grid_finished.txt");
+    // // sending all subgrids to process 0 after finishing itterations so it can fill the main grid with it:
+    // if (my_id == 0) {
+    //     // Define the filename for saving the grid
+    //     gatherSubgrids(SubMatrix, subGridSize, GlobalMatrix, num_procs, processorGridSize,filename); // gather all subgrids and write it to a file
+    // }
+    // else {
+    //     // send your submatrix
+    //     MPI_Send(&(SubMatrix[0][0][val2]), subGridSize * subGridSize, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    // }
+    //
+    //
 
-    // sending all subgrids to process 0 after finishing itterations so it can fill the main grid with it:
-    if (my_id == 0) {
-        // schreibe mein eigenes subgrid in Global Matrix (process 0's subgrid)
-        int i,j;
-#pragma omp parallel for private(j)
-        for (i = 0; i < subGridSize; ++i) {
-            for (j = 0; j < subGridSize; ++j) {
-                GlobalMatrix[i][j][1] = SubMatrix[i][j][val2];
-            }
-        }
+    // // Free allocated memory:
+    // destroy_matrix(&SubMatrix,subGridSize, 2);
+    // printf("SubGrid of processor %s succesfully destroyed... \n",processor_name);
+    // if (my_id == 0){
+    //     destroy_matrix(&GlobalMatrix, subGridSize*processorGridSize, 2);
+    //     printf("Global Matrix of processor %s succesfully destroyed... \n",processor_name);
+    // }
+    // destroy_vector(&top_edge_roll_over);
+    // destroy_vector(&bottom_edge_roll_over);
+    // destroy_vector(&left_edge);
+    // destroy_vector(&right_edge);
+    // printf("vectors of processor %s succesfully destroyed... \n",processor_name);
 
-        for (int p = 1; p < num_procs; ++p) {
-            // get the starting positions for the process in the Global Matrix to store its Submatrix
-            int start_row = (p / processorGridSize) * subGridSize;
-            int start_col = (p % processorGridSize) * subGridSize;
-            // receiving submatrices from processes
-            MPI_Recv(&(GlobalMatrix[start_row][start_col][1]), subGridSize * subGridSize, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-        // print resulting grid to console:
-        printf("resulting Grid: \n");
-        printGrid(GlobalMatrix, subGridSize*processorGridSize, 1);  // layer 1 will be the result !!!!
-        char filename[20]; // erzeuge array of chars um Dateinamen zu speichern
-        sprintf(filename, "resulting_grid.txt"); // generiere Dateiname und speichere ihn ab
-        saveGridToFile(GlobalMatrix,subGridSize*processorGridSize,1, filename); // erzeuge eine .txt datei mit Dateiname und speichere darin das grid des aktuellen standes ab
-
-    }
-    else {
-        // send your submatrix
-        MPI_Send(&(SubMatrix[0][0][val2]), subGridSize * subGridSize, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
-
-
-
-    // Free allocated memory:
-    destroy_matrix(&SubMatrix,subGridSize, 2);
-    printf("SubGrid of processor %s succesfully destroyed... \n",processor_name);
-    if (my_id == 0){
-        destroy_matrix(&GlobalMatrix, subGridSize*processorGridSize, 2);
-        printf("Global Matrix of processor %s succesfully destroyed... \n",processor_name);
-    }
-    destroy_vector(&top_edge_roll_over);
-    destroy_vector(&bottom_edge_roll_over);
-    destroy_vector(&left_edge);
-    destroy_vector(&right_edge);
-    printf("vectors of processor %s succesfully destroyed... \n",processor_name);
-
-    return 0;
+//     return 0;
 }
+
+
+
+
+
 
 
 
@@ -300,7 +283,6 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, i
     // newGrid, and oldGrid is alternating -> layer 0 and 1
     // gehe durch das gesamte alte grid und wende die Zustandsübergangstabelle an
     int i, j;
-# pragma omp parallel for private (j)
     for (i = 0; i < SubGridSize; ++i) {
         for (j = 0; j < SubGridSize; ++j) {
             if (Matrix[i][j][OLD] & N) {
@@ -334,7 +316,6 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, i
 void handleCollisions(int ***Matrix, int SubGridSize, int OLD) {
     /*handels Collisions in the new grid*/
     int i, j;
-# pragma omp parallel for private (j)
     for (i = 0; i < SubGridSize; ++i) {
         for (j = 0; j < SubGridSize; ++j) {
             int cell = Matrix[i][j][OLD];
@@ -387,39 +368,39 @@ void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename
 
 void create_matrix(int ****Matrix, int nrows, int ncols, int nlayers)
 {
-    // Check, if *A=NULL. Empty A is necessary!
-    assert ( *Matrix == NULL );
-
-    // allocate the necessary memory
+    assert ( *Matrix == NULL );    // Check, if *A=NULL. Empty A is necessary!
 
     *Matrix = (int***) malloc(nrows * sizeof(int**));
-
-    int i, j;
-# pragma omp parallel for private (j)
-    for(i = 0; i < nrows; i++){
-        (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
-        for(j = 0; j < ncols; j++){
-            (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
-        }
-    }
-
-    // Check if the memory allocation was successful
-    if (*Matrix == NULL) {
+    if(*Matrix == NULL){
         perror("Failed to allocate memory for matrix");
         exit(EXIT_FAILURE);
     }
-    return;
+
+    for(int i = 0; i < nrows; i++){
+        (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
+        if((*Matrix)[i] == NULL){
+            perror("Failed to allocate memory for matrix");
+            exit(EXIT_FAILURE);
+        }
+
+        for(int j = 0; j < ncols; j++){
+            (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
+            if((*Matrix)[i][j] == NULL){
+                perror("Failed to allocate memory for matrix");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
 }
-
-
-
+//
+//
+//
 void destroy_matrix(int ****Matrix, int nrows, int nlayers) {
     // Check, if *A != NULL. non-empty A is necessary!
     assert(*Matrix != NULL);   // If condition is FALSE, program aborts!
 
     // free the memory
     int i, j;
-# pragma omp parallel for private (j)
     for (i = 0; i < nlayers; ++i) {
         for (j = 0; j < nrows; ++j) {
             free((*Matrix)[i][j]);
@@ -429,9 +410,8 @@ void destroy_matrix(int ****Matrix, int nrows, int nlayers) {
     free(*Matrix);
 
     *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
-    return;
 }
-
+//
 void create_vector(int **vector, int SubGridSize) {
     // Check, if *vector == NULL. Non-empty vector is not allowed!
     assert(*vector == NULL); // If condition is FALSE, program aborts!
@@ -462,7 +442,6 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
 
     // -------------------------------- Ränder übergeben -----------------------------
     // entnehme oberen und unteren Rand aus der Matrix
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         top_edge_roll_over[i] = Matrix[0][i][NEW]; // erste Zeile alle Spalten von NEW
         bottom_edge_roll_over[i] = Matrix[SubGridSize - 1][i][NEW]; // letzte Zeile alle Spalten von NEW
@@ -475,7 +454,6 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
     // Der Processor hat den oberen Rand von dem Subgrid unter Ihm empfangen und speichert ihn in die unterste Zeile
     // damit wird top_edge_roll_over ersetze durch den oberen Rand des subgrids unter uns -> unser unterer Rand
     // Kopiere empfangene Daten in die Matrix
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         Matrix[SubGridSize - 1][i][NEW] = top_edge_roll_over[i]; // unterer Rand
     }
@@ -487,13 +465,11 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
     // Der Processor hat den unteren Rand von dem Subgrid über Ihm empfangen und speichert ihn in die oberste Zeile
     // damit wird bottom_edge_roll_over ersetze durch den unteren Rand des subgrids über uns -> unser neuer oberer Rand
     // Kopiere empfangene Daten in die Matrix
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         Matrix[0][i][NEW] = bottom_edge_roll_over[i]; // oberer Rand
     }
 
 
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         left_edge[i] = Matrix[i][0][NEW];
         right_edge[i] = Matrix[i][SubGridSize - 1][NEW];
@@ -506,7 +482,6 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
     MPI_Sendrecv_replace(left_edge, SubGridSize, MPI_INT, left, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     // damit wird left_edge ersetze durch den linken rand des subgrids rechts neben uns -> unser neuer rechter Rand
     // Kopiere empfangene Daten in die Matrix
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         Matrix[i][SubGridSize - 1][NEW] = left_edge[i]; // rechter Rand
     }
@@ -518,12 +493,33 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
     MPI_Sendrecv_replace(right_edge, SubGridSize, MPI_INT, right, 0, my_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     // damit wird right_edge ersetze durch den rechten rand des subgrids links neben uns -> unser neuer linker Rand
     // Kopiere empfangene Daten in die Matrix
-# pragma omp parallel for
     for (int i = 0; i < SubGridSize; ++i) {
         Matrix[i][0][NEW] = right_edge[i]; // linker Rand
     }
 }
 
 
+void gatherSubgrids(int *** own_SubMatrix, int subGridSize, int ***GlobalMatrix, int num_procs, int processorGridSize, const char *filename) {
+        // Schreibe mein eigenes Subgrid in die globale Matrix (Prozess 0's Subgrid)
+    int i, j;
+        for (i = 0; i < subGridSize; ++i) {
+            for (j = 0; j < subGridSize; ++j) {
+                GlobalMatrix[i][j][0] = own_SubMatrix[i][j][0];
+            }
+        }
+
+        for (int p = 1; p < num_procs; ++p) {
+            // Bestimme die Startpositionen für den Prozess in der globalen Matrix, um seine Submatrix zu speichern
+            int start_row = (p / processorGridSize) * subGridSize;
+            int start_col = (p % processorGridSize) * subGridSize;
+            // Empfange Submatrizen von Prozessen
+            MPI_Recv(&(GlobalMatrix[start_row][start_col][0]), subGridSize * subGridSize, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+
+        // Drucke das resultierende Grid auf die Konsole:
+        printf("starting Grid to save: \n");
+        printGrid(GlobalMatrix, subGridSize * processorGridSize, 0);  // Layer 1 wird das Ergebnis sein !!!
+        saveGridToFile(GlobalMatrix, subGridSize * processorGridSize, 0, filename); // Erzeuge eine .txt-Datei mit Dateinamen und speichere darin das Grid des aktuellen Standes ab
+}
 
 
