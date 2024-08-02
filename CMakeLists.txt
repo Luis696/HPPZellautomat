@@ -11,6 +11,10 @@ set(CMAKE_CXX_STANDARD 14)
 
 add_executable(HPPZellautomat main.cpp)
 add_executable(HPPZellautomatV1 mainV1.cpp)
+
+add_executable(HPPZellautomatEXP  Experiments.cpp)
+
 # Add libraries for code completion and compiling
 target_link_libraries(HPPZellautomat PUBLIC MPI::MPI_CXX)
 target_link_libraries(HPPZellautomatV1 PUBLIC MPI::MPI_CXX)
+target_link_libraries(HPPZellautomatEXP PUBLIC MPI::MPI_CXX)

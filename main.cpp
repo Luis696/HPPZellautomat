@@ -33,7 +33,7 @@ void create_vector(int **vector, int SubGridSize);
 void destroy_vector(int **vector);
 
 void initializeGrid(int ***Matrix, int SubGridSize);
-void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id);
+void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, int edge);
 void handleCollisions(int ***Matrix, int SubGridSize, int OLD);
 void printGrid(int ***Matrix, int GridSize, int layer);
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename);
@@ -92,6 +92,33 @@ int main(int argc, char** argv) {
 
 
     // ------------------ bestimme die ID der entsprechenden Prozessoren: ----------------
+
+    // Bestimme ob die Subgrids welche die Ränder Bilden. Weise den Subgrids entsprechend Ihrer Randposition einen Wert.
+    // Ecken haben Ränder in zwei Richtungen:
+        // linke obere Ecke: N & W = 1+2 = 3
+        // rechte obere Ecke: N & E = 2+4 = 6
+        // rechte untere Ecke: O & S = 4+8 = 12
+        // linke untere Ecke: S & W = 8+1 = 9
+    // Keine Randposition = 0
+
+    // Bestimme die Zeile und Spalte des aktuellen Prozessors im Gesamtgrid
+    int row = my_id / processorGridSize;
+    int col = my_id % processorGridSize;
+
+    // Bestimme die Position am Rand
+    int edge = 0;
+    if (row == 0) {
+        edge |= N; // Am nördlichsten Ende
+    }
+    if (row == processorGridSize - 1) {
+        edge |= S; // Am südlichsten Ende
+    }
+    if (col == 0) {
+        edge |= W; // Am westlichsten Ende
+    }
+    if (col == processorGridSize - 1) {
+        edge |= E; // Am östlichsten Ende
+    }
     // bestimme die ID der Nachbar prozessoren
     int above = -1, below = -1;
     above = (my_id - processorGridSize + num_procs) % num_procs; // Nachbar oben
@@ -125,7 +152,8 @@ int main(int argc, char** argv) {
            "above: %d\n"
            "right: %d\n"
            "below: %d\n"
-           "left:  %d\n\n\n", processor_name, my_id, num_procs, above, right, below, left);
+           "left:  %d\n"
+           "edge value: %i \n\n\n", processor_name, my_id, num_procs, above, right, below, left,edge);
     //---------------------------------------------------------------------------------
 
 
@@ -190,7 +218,7 @@ int main(int argc, char** argv) {
         printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
         handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
-        moveParticles(SubMatrix, subGridSize, val1, val2, my_id);  // bewege alle Partikel entlang der Richtung
+        moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
         //  // Teilen der Randwerte mit den benachbarten Prozessoren
         // share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
         //             left_edge, right_edge);
@@ -268,7 +296,7 @@ void initializeGrid(int ***Matrix, int SubGridSize) {
 
 }
 
-void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id) {
+void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, int edge) {
     // newGrid, and oldGrid is alternating -> layer 0 and 1
     // gehe durch das gesamte alte grid und wende die Zustandsübergangstabelle an
     int i, j;
@@ -277,25 +305,25 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id) {
         for (j = 0; j < SubGridSize; ++j) {
             if (Matrix[i][j][OLD] & N) {
                 if (i > 0) Matrix[i-1][j][NEW] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (i == 0) Matrix[i+1][j][NEW] |= S; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (i == 0 & (edge & N)) Matrix[i+1][j][NEW] |= S; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~N; // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & S) {
                 if (i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (i == SubGridSize - 1) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (i == SubGridSize - 1 & (edge & S)) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~S;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & W) {
                 if (j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == 0) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == 0 & (edge & W)) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~W;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & E) {
                 if (j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == SubGridSize - 1) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == SubGridSize - 1 & (edge & E)) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~E;  // wenn Partikel bewegt, lösche alte Position
             }
         }
@@ -495,3 +523,7 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
         Matrix[i][0][NEW] = right_edge[i]; // linker Rand
     }
 }
+
+
+
+
