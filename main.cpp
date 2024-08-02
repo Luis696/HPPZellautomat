@@ -22,6 +22,8 @@
  * 0011  3  1010 10  1111 15
  *
  * Collosions: 5, 10
+ * 5 = E & W collosion
+ * 10 = N & S collosion
 */
 
 // definiere alle Funktionen die wir brauchen
@@ -31,8 +33,8 @@ void create_vector(int **vector, int SubGridSize);
 void destroy_vector(int **vector);
 
 void initializeGrid(int ***Matrix, int SubGridSize);
-void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW);
-void handleCollisions(int ***Matrix, int SubGridSize, int OLD, int NEW);
+void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id);
+void handleCollisions(int ***Matrix, int SubGridSize, int OLD);
 void printGrid(int ***Matrix, int GridSize, int layer);
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename);
 void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
@@ -128,6 +130,8 @@ int main(int argc, char** argv) {
 
 
     initializeGrid(SubMatrix, subGridSize); // fill grid with random numbers
+    SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
+    SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
 
     // print the initial grid to console & saving it
     printf("Initial grid layer 0:\n");
@@ -173,6 +177,7 @@ int main(int argc, char** argv) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     // ------------------------------------------------ start the itteration of the grid: -----------------------------------------------
+
     for (int step = 0; step < numb_iterations; ++step) {
         int val1 = step % 2; // alternate depending on the step
         int val2 = 1 - val1; // inverse of val1
@@ -182,12 +187,13 @@ int main(int argc, char** argv) {
             step = 3, val1 = 1, val2 = 0
             step = 4, val1 = 0, val2 = 1
          */
+        printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
-        moveParticles(SubMatrix, subGridSize, val1, val2 );  // bewege alle Partikel entlang der Richtung
-        handleCollisions(SubMatrix, subGridSize, val1, val2); // check for collions in the new grid
-         // Teilen der Randwerte mit den benachbarten Prozessoren
-        share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
-                    left_edge, right_edge);
+        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
+        moveParticles(SubMatrix, subGridSize, val1, val2, my_id);  // bewege alle Partikel entlang der Richtung
+        //  // Teilen der Randwerte mit den benachbarten Prozessoren
+        // share_edges(my_id, SubMatrix, subGridSize, val2, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
+        //             left_edge, right_edge);
         // print resulting grid to console:
         printf("New Grid after step %d:\n", step + 1);
         printGrid(SubMatrix, subGridSize, val2);
@@ -258,36 +264,46 @@ void initializeGrid(int ***Matrix, int SubGridSize) {
             Matrix[i][j][1] = 0; //rand_num;
         }
     }
-    Matrix[int(SubGridSize/2)][int(SubGridSize/2)][0] = S;
-    Matrix[int(SubGridSize/2)][int(SubGridSize/2)][1] = S;
+
 
 }
 
-void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW) {
+void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id) {
     // newGrid, and oldGrid is alternating -> layer 0 and 1
     // gehe durch das gesamte alte grid und wende die Zustandsübergangstabelle an
     int i, j;
 # pragma omp parallel for private (j)
     for (i = 0; i < SubGridSize; ++i) {
         for (j = 0; j < SubGridSize; ++j) {
-            if (Matrix[i][j][OLD] & N && i > 0) Matrix[i-1][j][NEW] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & N && i == 0) Matrix[SubGridSize-1][j][NEW] |= N; // if hitting a frame periodic
+            if (Matrix[i][j][OLD] & N) {
+                if (i > 0) Matrix[i-1][j][NEW] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
+                if (i == 0) Matrix[i+1][j][NEW] |= S; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                Matrix[i][j][OLD] &= ~N; // wenn Partikel bewegt, lösche alte Position
+            }
 
-            if (Matrix[i][j][OLD] & S && i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & S && i == SubGridSize - 1) Matrix[0][j][NEW] |= S; // if hitting a frame periodic
+            if (Matrix[i][j][OLD] & S) {
+                if (i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
+                if (i == SubGridSize - 1) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                Matrix[i][j][OLD] &= ~S;  // wenn Partikel bewegt, lösche alte Position
+            }
 
-            if (Matrix[i][j][OLD] & W && j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & W && j == 0) Matrix[i][SubGridSize-1][NEW] |= W;  // if hitting a frame periodic
+            if (Matrix[i][j][OLD] & W) {
+                if (j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
+                if (j == 0) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                Matrix[i][j][OLD] &= ~W;  // wenn Partikel bewegt, lösche alte Position
+            }
 
-            if (Matrix[i][j][OLD] & E && j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (Matrix[i][j][OLD] & E && j == SubGridSize - 1) Matrix[i][0][NEW] |= E; // if hitting a frame periodic
-
+            if (Matrix[i][j][OLD] & E) {
+                if (j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
+                if (j == SubGridSize - 1) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                Matrix[i][j][OLD] &= ~E;  // wenn Partikel bewegt, lösche alte Position
+            }
         }
     }
 
 }
 
-void handleCollisions(int ***Matrix, int SubGridSize, int OLD, int NEW) {
+void handleCollisions(int ***Matrix, int SubGridSize, int OLD) {
     /*handels Collisions in the new grid*/
     int i, j;
 # pragma omp parallel for private (j)
@@ -297,12 +313,16 @@ void handleCollisions(int ***Matrix, int SubGridSize, int OLD, int NEW) {
             if ((cell & N) && (cell & S)) { // wenn in der Zelle Nord- und Südpartikel vorhanden sind
                 cell &= ~(N | S); // entferne Sie die Nord- und Südpartikel
                 cell |= (W | E);  // fügen West- und Ostpartikel hinzu
+                printf("!N & S Collosion!");
+
             }
-            if ((cell & W) && (cell & E)) { // wenn in der Zelle West und Ostpartikel vorhanden sind
+
+            else if((cell & W) && (cell & E)) { // wenn in der Zelle West und Ostpartikel vorhanden sind
                 cell &= ~(W | E); // entfernen Sie die West- und Ostpartikel
                 cell |= (N | S);  // fügen Nord- und Südpartikel hinzu
+                printf("!W & E Collosion!");
             }
-            Matrix[i][j][NEW] = cell; // setze die aktuelle Zelle im grid auf den neuen Wert
+            Matrix[i][j][OLD] = cell; // setze die aktuelle Zelle im grid auf den neuen Wert
         }
     }
 }
