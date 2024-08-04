@@ -6,7 +6,7 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 4
+#define numb_iterations 30
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -174,7 +174,8 @@ int main(int argc, char** argv) {
     int ***BufferMatrix = NULL;
     if(my_id == 0) {
         // set initial particles
-        SubMatrix[1][int(subGridSize/2)][0] = N; // setting an initial particle
+        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
+        SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
         // SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
         // SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
         // allocate the global matrix for processor 0
@@ -219,7 +220,7 @@ int main(int argc, char** argv) {
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
-        // handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
+        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
                     left_edge, right_edge, edge);
@@ -235,6 +236,7 @@ int main(int argc, char** argv) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
             printf("Grid %s to save: \n", filename);
             printGrid(GlobalMatrix,MainMatrixsize,val2);
+            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
@@ -310,19 +312,19 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, i
 
             if (Matrix[i][j][OLD] & S) {
                 if (i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (i == SubGridSize - 1 & (edge & S)) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (i == SubGridSize - 1 && (edge & S)) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~S;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & W) {
                 if (j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == 0 & (edge & W)) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == 0 && (edge & W)) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~W;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & E) {
                 if (j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == SubGridSize - 1 & (edge & E)) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == SubGridSize - 1 && (edge & E)) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~E;  // wenn Partikel bewegt, lösche alte Position
             }
         }
@@ -586,13 +588,13 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
         if (Matrix[i][0][NEW] != W || (edge & W)) { // checke if partikel auch wirklich nach Westen unterwegs und ob es sich nicht um einen Rand handelt
             left_edge[i] = 0; // set array element to 0 if it is not equal to N
         } else {
-            left_edge[i] = Matrix[i][0][NEW];
+            left_edge[i] = Matrix[i][0][OLD];
         }
 
         if (Matrix[i][SubGridSize - 1][NEW] != E || (edge & E)) {
             right_edge[i] = 0; // set array element to 0 if it is not equal to N
         } else {
-            right_edge[i] = Matrix[i][SubGridSize - 1][NEW];
+            right_edge[i] = Matrix[i][SubGridSize - 1][OLD];
         }
     }
 
