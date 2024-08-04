@@ -5,7 +5,7 @@
 #include <cmath>
 #include <assert.h>
 
-#define GRID_SIZE 5 // lege die größe des grids fest
+//#define GRID_SIZE 0 // lege die größe des grids fest
 #define numb_iterations 10
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
@@ -33,32 +33,32 @@ void destroy_matrix(int * ***Matrix, int nrows, int nlayers);
 void create_vector(int **vector, int SubGridSize);
 void destroy_vector(int **vector);
 
-void initializeGrid(int ***Matrix, int SubGridSize);
+void initializeGrid(int ***Matrix, int nrows, int , int nlayers,int initializing_value);
 void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, int edge);
 void handleCollisions(int ***Matrix, int SubGridSize, int OLD);
 void printGrid(int ***Matrix, int GridSize, int layer);
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename);
 void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
                  int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge);
-void gatherSubgrids(int *** own_SubMatrix, int subGridSize, int ***GlobalMatrix, int num_procs, int processorGridSize, const char *filename);
+void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
 
 
 int main(int argc, char** argv) {
-     printf("\n\n--------- Environmet settings:---------- \n");
-     // ---------------  Initialize the MPI Environment:
-     MPI_Status status;
-     MPI_Init(&argc, &argv);
-     // Get the number of processes avaiable
-     int num_procs;
-     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-     int processorGridSize = sqrt(num_procs);
-     // Get the id of the process
-     int my_id;
-     MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
-     // Get the name of the processor
-     char processor_name[MPI_MAX_PROCESSOR_NAME];
-     int name_len;
-     MPI_Get_processor_name(processor_name, &name_len);
+    // printf("\n\n--------- Environmet settings:---------- \n");
+    // ---------------  Initialize the MPI Environment:
+    MPI_Status status;
+    MPI_Init(&argc, &argv);
+    // Get the number of processes avaiable
+    int num_procs;
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+    int processorGridSize = sqrt(num_procs);
+    // Get the id of the process
+    int my_id;
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
+    // Get the name of the processor
+    char processor_name[MPI_MAX_PROCESSOR_NAME];
+    int name_len;
+    MPI_Get_processor_name(processor_name, &name_len);
 
     // // -------------- Initialize the OpenMP Environment:
     // int num_of_threads = 1;
@@ -67,29 +67,6 @@ int main(int argc, char** argv) {
     // omp_set_num_threads(num_of_threads);
     // printf("--------------- finished -----------------\n\n");
     // // -------------------------------------------------
-
-    // allocate Vectors for send recv edges:
-    int subGridSize  = GRID_SIZE / num_procs;
-    int*** SubMatrix = NULL;
-    //create matrix buffer:
-    create_matrix(&SubMatrix,subGridSize,subGridSize,2);
-    printf("created SubGrid processor %s ... \n",processor_name);
-    // Allocate the edge buffers
-    int *top_edge_roll_over = NULL, *bottom_edge_roll_over= NULL;
-    int *left_edge= NULL, *right_edge= NULL;
-
-
-    create_vector(&top_edge_roll_over, subGridSize);
-    create_vector(&bottom_edge_roll_over, subGridSize);
-    create_vector(&left_edge, subGridSize);
-    create_vector(&right_edge, subGridSize);
-
-    // allocate the global matrix
-    int ***GlobalMatrix = NULL;  //
-    if (my_id == 0) {
-        // Allocation and initialization of GlobalMatrix
-        create_matrix(&GlobalMatrix, subGridSize*processorGridSize, subGridSize*processorGridSize, 2);
-    }
 
 
     // ------------------ bestimme die ID der entsprechenden Prozessoren: ----------------
@@ -147,40 +124,76 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    // Print off a hello world message
-    printf("Hello from processor %s, rank %d out of %d processors\n "
-           "--------my neighbours are ---------:\n"
-           "above: %d\n"
-           "right: %d\n"
-           "below: %d\n"
-           "left:  %d\n"
-           "edge value: %i \n\n\n", processor_name, my_id, num_procs, above, right, below, left,edge);
-    //---------------------------------------------------------------------------------
+    // // Print off a hello world message from each processor
+    // printf("Hello from processor %s, rank %d out of %d processors\n "
+    //        "--------my neighbours are ---------:\n"
+    //        "above: %d\n"
+    //        "right: %d\n"
+    //        "below: %d\n"
+    //        "left:  %d\n"
+    //        "edge value: %i \n\n\n", processor_name, my_id, num_procs, above, right, below, left,edge);
+    // //---------------------------------------------------------------------------------
 
+    int subGridSize = 10;
+    int subGridLayers = 2;
+    int MainMatrixsize = subGridSize * processorGridSize;
 
-    initializeGrid(SubMatrix, subGridSize); // fill grid with random numbers
+    // allocate SubMatrices for all processors
+    int*** SubMatrix = NULL;
+    //create matrix buffer:
+    create_matrix(&SubMatrix,subGridSize,subGridSize,subGridLayers);
+    initializeGrid(SubMatrix,subGridSize,subGridSize,subGridLayers, my_id);
+    printf("created SubGrid processor %i ... \n",my_id);
     // SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
     // SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
 
-    // print the initial grid to console & saving it
-    printf("Initial grid layer 0:\n");
-    printGrid(SubMatrix, subGridSize, 0);
-    printf("Initial grid layer 1:\n");
-    printGrid(SubMatrix, subGridSize, 1);
 
-    // saveGridToFile(grid, "grid_0.txt");
-    sprintf(filename, "../Grids/grid_start.txt");
+    // Allocate the edge buffers for all subgrids of all processors
+    int *top_edge_roll_over = NULL, *bottom_edge_roll_over= NULL;
+    int *left_edge= NULL, *right_edge= NULL;
+    create_vector(&top_edge_roll_over, subGridSize);
+    create_vector(&bottom_edge_roll_over, subGridSize);
+    create_vector(&left_edge, subGridSize);
+    create_vector(&right_edge, subGridSize);
+
+    // // print the initial grid of every processor to console & saving it
+    // printf("Initial grid layer 0:\n");
+    // printGrid(SubMatrix, subGridSize, 0);
+    // printf("Initial grid layer 1:\n");
+    // printGrid(SubMatrix, subGridSize, 1);
+    // sprintf(filename, "../Grids/grid_start.txt");
     // sending all subgrids to process 0 so it can fill the main grid with it:
-    if (my_id == 0) {
-        gatherSubgrids(SubMatrix, subGridSize, GlobalMatrix, num_procs, processorGridSize, filename); // gather all subgrids and write it to a file
-    }
-    else {
+    //
+    if (my_id != 0) {
         // send your submatrix
-        MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+    // // MPI_Barrier(MPI_COMM_WORLD);
+    //
+    int ***GlobalMatrix = NULL;  //
+    if(my_id == 0) {
+        // allocate the global matrix for processor 0
+        create_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers);
+        // initialization of GlobalMatrix
+        initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers, 0);
+        // print information about Grid sizes
+        printf("Number of Processors:%i \n", num_procs);
+        printf("Processor Gridzize: %i x %i \n", processorGridSize, processorGridSize);
+        printf("Subgridsize: %i x %i \n", subGridSize, subGridSize);
+        printf("Main Matrix size: %i x %i \n\n", MainMatrixsize, MainMatrixsize);
+        // Allocate and initialize the temporary (buffer) matrix.
+        int ***BufferMatrix = NULL;
+        create_matrix(&BufferMatrix, subGridSize, subGridSize, subGridLayers);
+
+        int step = 0;
+        sprintf(filename, "../Grids/grid_%i.txt",step);
+        // collecting all Subgrids from all processors
+        gatherSubgrids(GlobalMatrix, BufferMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
     }
 
-    // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
-    MPI_Barrier(MPI_COMM_WORLD);
+    //
+    // // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
+    // MPI_Barrier(MPI_COMM_WORLD);
 
 
     int val1, val2 = 0;
@@ -238,41 +251,35 @@ int main(int argc, char** argv) {
     //
     //
 
-    // // Free allocated memory:
-    // destroy_matrix(&SubMatrix,subGridSize, 2);
-    // printf("SubGrid of processor %s succesfully destroyed... \n",processor_name);
-    // if (my_id == 0){
-    //     destroy_matrix(&GlobalMatrix, subGridSize*processorGridSize, 2);
-    //     printf("Global Matrix of processor %s succesfully destroyed... \n",processor_name);
-    // }
-    // destroy_vector(&top_edge_roll_over);
-    // destroy_vector(&bottom_edge_roll_over);
-    // destroy_vector(&left_edge);
-    // destroy_vector(&right_edge);
-    // printf("vectors of processor %s succesfully destroyed... \n",processor_name);
+    // Free allocated memory:
+    destroy_matrix(&SubMatrix,subGridSize, 2);
+    printf("SubGrid of processor %i succesfully destroyed... \n",my_id);
+    if (my_id == 0){
+        destroy_matrix(&GlobalMatrix, subGridSize*processorGridSize, 2);
+        printf("Global Matrix of processor %i succesfully destroyed... \n",my_id);
+    }
+    destroy_vector(&top_edge_roll_over);
+    destroy_vector(&bottom_edge_roll_over);
+    destroy_vector(&left_edge);
+    destroy_vector(&right_edge);
+    printf("vectors of processor %i succesfully destroyed... \n",my_id);
 
-//     return 0;
+    return 0;
+    MPI_Finalize();
 }
 
 
 
 
-
-
-
-
-
-
-
-
-
-void initializeGrid(int ***Matrix, int SubGridSize) {
+void initializeGrid(int ***Matrix, int nrows, int ncols , int nlayers, int initializing_value) {
     int rand_num = 0;
-    for (int i = 0; i < SubGridSize; ++i) {
-        for (int j = 0; j < SubGridSize; ++j) {
-            rand_num = rand() % 16; // Zufälliger Zustand (0 bis 15) für alle möglichen Binärzustände, siehe Zustandsübergangstabelle
-            Matrix[i][j][0] = 0; //rand_num;
-            Matrix[i][j][1] = 0; //rand_num;
+    for (int i = 0; i < nrows; ++i) {
+        for (int j = 0; j < ncols; ++j) {
+            for( int k = 0; k < nlayers; k++) {
+                rand_num = rand() % 16; // Zufälliger Zustand (0 bis 15) für alle möglichen Binärzustände, siehe Zustandsübergangstabelle
+                Matrix[i][j][k] = initializing_value; //rand_num;
+                Matrix[i][j][k] = initializing_value; //rand_num;
+            }
         }
     }
 
@@ -366,51 +373,94 @@ void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename
     printf("saved grid to file\n");
 }
 
+// not continuouse memory allocation
+// void create_matrix(int ****Matrix, int nrows, int ncols, int nlayers)
+// {
+//     assert ( *Matrix == NULL );    // Check, if *A=NULL. Empty A is necessary!
+//
+//     *Matrix = (int***) malloc(nrows * sizeof(int**));
+//     if(*Matrix == NULL){
+//         perror("Failed to allocate memory for matrix");
+//         exit(EXIT_FAILURE);
+//     }
+//
+//     for(int i = 0; i < nrows; i++){
+//         (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
+//         if((*Matrix)[i] == NULL){
+//             perror("Failed to allocate memory for matrix");
+//             exit(EXIT_FAILURE);
+//         }
+//
+//         for(int j = 0; j < ncols; j++){
+//             (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
+//             if((*Matrix)[i][j] == NULL){
+//                 perror("Failed to allocate memory for matrix");
+//                 exit(EXIT_FAILURE);
+//             }
+//         }
+//     }
+// }
+// void destroy_matrix(int ****Matrix, int nrows, int nlayers) {
+//     // Check, if *A != NULL. non-empty A is necessary!
+//     assert(*Matrix != NULL);   // If condition is FALSE, program aborts!
+//
+//     // free the memory
+//     int i, j;
+//     for (i = 0; i < nlayers; ++i) {
+//         for (j = 0; j < nrows; ++j) {
+//             free((*Matrix)[i][j]);
+//         }
+//         free((*Matrix)[i]);
+//     }
+//     free(*Matrix);
+//
+//     *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
+// }
+
+
+// continouse memory allocation:
 void create_matrix(int ****Matrix, int nrows, int ncols, int nlayers)
 {
     assert ( *Matrix == NULL );    // Check, if *A=NULL. Empty A is necessary!
 
-    *Matrix = (int***) malloc(nrows * sizeof(int**));
-    if(*Matrix == NULL){
-        perror("Failed to allocate memory for matrix");
-        exit(EXIT_FAILURE);
-    }
+    // Create a single, contiguous block of memory for your data
+    int *data = (int *) malloc(nrows * ncols * nlayers * sizeof(*data));
+    assert(data != NULL);
 
-    for(int i = 0; i < nrows; i++){
-        (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
-        if((*Matrix)[i] == NULL){
-            perror("Failed to allocate memory for matrix");
-            exit(EXIT_FAILURE);
-        }
+    // Allocate your pointers into this block of memory
+    *Matrix = (int ***) malloc(nrows * sizeof(**Matrix));
+    assert(*Matrix != NULL);
 
-        for(int j = 0; j < ncols; j++){
-            (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
-            if((*Matrix)[i][j] == NULL){
-                perror("Failed to allocate memory for matrix");
-                exit(EXIT_FAILURE);
-            }
+    for (int i = 0; i < nrows; ++i) {
+        (*Matrix)[i] = (int **) malloc(ncols * sizeof(***Matrix));
+        assert((*Matrix)[i] != NULL);
+
+        for (int j = 0; j < ncols; ++j) {
+            (*Matrix)[i][j] = &(data[(i * ncols + j) * nlayers]);
         }
     }
 }
-//
-//
-//
-void destroy_matrix(int ****Matrix, int nrows, int nlayers) {
-    // Check, if *A != NULL. non-empty A is necessary!
-    assert(*Matrix != NULL);   // If condition is FALSE, program aborts!
+void destroy_matrix(int ****Matrix, int nrows, int ncols)
+{
+    if(*Matrix != NULL){
+        // Free the contiguous block of memory for data.
+        // It's enough to free the first element of the first column of the first row.
+        free((*Matrix)[0][0]);
 
-    // free the memory
-    int i, j;
-    for (i = 0; i < nlayers; ++i) {
-        for (j = 0; j < nrows; ++j) {
-            free((*Matrix)[i][j]);
+        // Free the memory for the array of pointers.
+        for (int i = 0; i < nrows; ++i) {
+            free((*Matrix)[i]);
         }
-        free((*Matrix)[i]);
-    }
-    free(*Matrix);
 
-    *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
+        // Free the memory for the pointer to the pointers.
+        free(*Matrix);
+
+        // Set the pointer to null preventing accidental usage after free
+        *Matrix = NULL;
+    }
 }
+
+
 //
 void create_vector(int **vector, int SubGridSize) {
     // Check, if *vector == NULL. Non-empty vector is not allowed!
@@ -436,6 +486,49 @@ void destroy_vector(int **vector) {
     *vector = NULL;
 }
 
+void create_2D_matrix(int ***Matrix, int nrows, int ncols) {
+    assert(*Matrix == NULL); // Check, if *Matrix = NULL. An empty Matrix is necessary!
+    *Matrix = (int **) malloc(nrows * sizeof(int *));
+    if (*Matrix == NULL) {
+        perror("Failed to allocate memory for matrix");
+        exit(EXIT_FAILURE);
+    }
+    int *data = (int *) malloc(nrows * ncols * sizeof(int));
+    if(data == NULL){
+        perror("Failed to allocate memory for the data block of the matrix");
+        exit(EXIT_FAILURE);
+    }
+    for(int i = 0; i< nrows; ++i){
+        (*Matrix)[i] = &(data[i*ncols]);
+    }
+}
+
+void print_2D_Grid(int **Matrix, int GridSize) {
+    for (int i = 0; i < GridSize; ++i) {
+        for (int j = 0; j < GridSize; ++j) {
+            printf("%02d ", Matrix[i][j]);
+        }
+        printf("\n");   // Take a new line after printing each row
+    }
+    printf("\n");  // Take a new line after printing entire grid
+}
+
+
+void initialize_2D_Grid(int **Matrix, int nrows, int ncols, int my_id) {
+    for (int i = 0; i < nrows; ++i) {
+        for (int j = 0; j < ncols; ++j) {
+            Matrix[i][j] = my_id;
+        }
+    }
+}
+
+void destroy_2D_matrix(int ***Matrix, int nrows) {
+    // Free the data block
+    free(&((*Matrix)[0][0]));
+    // Free the array of pointers
+    free(*Matrix);
+    *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
+}
 
 void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, int below, int left, int right,
                  int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge) {
@@ -499,27 +592,27 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int above, 
 }
 
 
-void gatherSubgrids(int *** own_SubMatrix, int subGridSize, int ***GlobalMatrix, int num_procs, int processorGridSize, const char *filename) {
-        // Schreibe mein eigenes Subgrid in die globale Matrix (Prozess 0's Subgrid)
-    int i, j;
-        for (i = 0; i < subGridSize; ++i) {
-            for (j = 0; j < subGridSize; ++j) {
-                GlobalMatrix[i][j][0] = own_SubMatrix[i][j][0];
+void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename) {
+    for (int p = 1; p < num_procs; ++p) {
+        // Determine the starting coordinates for the submatrix in the global matrix.
+        int start_row = (p / processorGridSize) * 10;
+        int start_col = (p % processorGridSize) * 10;
+
+        // Receive submatrices from the other processes into the buffer matrix.
+        MPI_Recv(&(BufferMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Copy the values from the buffer matrix into the global matrix.
+        for (int i = 0; i < subGridSize; ++i) {
+            for (int j = 0; j < subGridSize; ++j) {
+                for(int k = 0; k<subGridLayers; k++){
+                    GlobalMatrix[start_row+i][start_col+j][k] = BufferMatrix[i][j][k];
+                }
             }
         }
-
-        for (int p = 1; p < num_procs; ++p) {
-            // Bestimme die Startpositionen für den Prozess in der globalen Matrix, um seine Submatrix zu speichern
-            int start_row = (p / processorGridSize) * subGridSize;
-            int start_col = (p % processorGridSize) * subGridSize;
-            // Empfange Submatrizen von Prozessen
-            MPI_Recv(&(GlobalMatrix[start_row][start_col][0]), subGridSize * subGridSize, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-
-        // Drucke das resultierende Grid auf die Konsole:
+    }
         printf("starting Grid to save: \n");
-        printGrid(GlobalMatrix, subGridSize * processorGridSize, 0);  // Layer 1 wird das Ergebnis sein !!!
-        saveGridToFile(GlobalMatrix, subGridSize * processorGridSize, 0, filename); // Erzeuge eine .txt-Datei mit Dateinamen und speichere darin das Grid des aktuellen Standes ab
+        printGrid(GlobalMatrix,MainMatrixsize,0);
+        saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename); // Erzeuge eine .txt-Datei mit Dateinamen und speichere darin das Grid des aktuellen Standes ab
 }
 
 

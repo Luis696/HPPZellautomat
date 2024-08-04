@@ -11,7 +11,12 @@
 #define E 4 // 0100
 
 
-int num_procs = 16;
+
+void create_matrix(int * ***Matrix, int nrows, int ncols, int nlayers);
+void destroy_matrix(int ***Matrix, int nrows);
+void printGrid(int **Matrix, int GridSize);
+void initializeGrid(int **Matrix, int nrows, int ncols, int my_id);
+void create_2D_matrix(int ***Matrix, int nrows, int ncols);
 
 int main(int argc, char** argv){
     // ---------------  Initialize the MPI Environment:
@@ -79,13 +84,154 @@ int main(int argc, char** argv){
         exit(EXIT_FAILURE);
     }
 
-    // Print off a hello world message
-    printf("Hello from processor, rank %d out of %d processors\n "
-           "--------my neighbours are ---------:\n"
-           "above: %d\n"
-           "right: %d\n"
-           "below: %d\n"
-           "left:  %d\n"
-           "edge:  %i\n\n\n", my_id, num_procs, above, right, below, left, edge);
 
+    int Subgridsize = 10;
+    int MainMatrixsize = Subgridsize * processorGridSize;
+
+    // // Print off a hello world message
+    // printf("Hello from processor, rank %d out of %d processors\n "
+    //        "--------my neighbours are ---------:\n"
+    //        "above: %d\n"
+    //        "right: %d\n"
+    //        "below: %d\n"
+    //        "left:  %d\n"
+    //        "edge:  %i\n\n\n", my_id, num_procs, above, right, below, left, edge);
+
+
+
+
+
+    if (my_id != 0) {
+        int **Matrix = NULL;
+        create_2D_matrix(&Matrix,Subgridsize,Subgridsize);
+        initializeGrid(Matrix, Subgridsize,Subgridsize, my_id);
+
+        // send your submatrix
+        MPI_Send(&(Matrix[0][0]), Subgridsize*Subgridsize, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        destroy_matrix(&Matrix, Subgridsize);
+
+    }
+
+    if (my_id == 0) {
+        // Allocate and initialize the global matrix.
+        int **GlobalMatrix = NULL;
+        create_2D_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize);
+        initializeGrid(GlobalMatrix, MainMatrixsize,MainMatrixsize, 0);
+
+        // Allocate and initialize the temporary (buffer) matrix.
+        int **BufferMatrix = NULL;
+        create_2D_matrix(&BufferMatrix, Subgridsize, Subgridsize);
+
+        // Allocate and initialize the ownSubMatrix.
+        int **ownSubMatrix = NULL;
+        create_2D_matrix(&ownSubMatrix, Subgridsize, Subgridsize);
+        initializeGrid(ownSubMatrix, Subgridsize,Subgridsize, 0);
+
+        // Copy the ownSubMatrix into the GlobalMatrix.
+        for (int i = 0; i < 10; ++i) {
+            for (int j = 0; j < 10; ++j) {
+                GlobalMatrix[i][j] = ownSubMatrix[i][j];
+            }
+        }
+
+        for (int p = 1; p < num_procs; ++p) {
+            // Determine the starting coordinates for the submatrix in the global matrix.
+            int start_row = (p / processorGridSize) * 10;
+            int start_col = (p % processorGridSize) * 10;
+
+            // Receive submatrices from the other processes into the buffer matrix.
+            MPI_Recv(&(BufferMatrix[0][0]), 10 * 10, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            // Copy the values from the buffer matrix into the global matrix.
+            for (int i = 0; i < 10; ++i) {
+                for (int j = 0; j < 10; ++j) {
+                    GlobalMatrix[start_row+i][start_col+j] = BufferMatrix[i][j];
+                }
+            }
+        }
+
+        printf("recveid Matrix\n");
+        printGrid(GlobalMatrix, 10 * processorGridSize);
+
+        // Clean up the dynamically allocated matrices.
+        destroy_matrix(&ownSubMatrix, 10);
+        destroy_matrix(&BufferMatrix, 10);
+    }
+
+    MPI_Finalize();
+}
+
+
+void create_matrix(int ****Matrix, int nrows, int ncols, int nlayers)
+{
+    assert ( *Matrix == NULL );    // Check, if *A=NULL. Empty A is necessary!
+
+    *Matrix = (int***) malloc(nrows * sizeof(int**));
+    if(*Matrix == NULL){
+        perror("Failed to allocate memory for matrix");
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i = 0; i < nrows; i++){
+        (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
+        if((*Matrix)[i] == NULL){
+            perror("Failed to allocate memory for matrix");
+            exit(EXIT_FAILURE);
+        }
+
+        for(int j = 0; j < ncols; j++){
+            (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
+            if((*Matrix)[i][j] == NULL){
+                perror("Failed to allocate memory for matrix");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+}
+//
+//
+//
+void destroy_2D_matrix(int ***Matrix, int nrows) {
+    // Free the data block
+    free(&((*Matrix)[0][0]));
+    // Free the array of pointers
+    free(*Matrix);
+    *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
+}
+
+void print_2D_Grid(int **Matrix, int GridSize) {
+    for (int i = 0; i < GridSize; ++i) {
+        for (int j = 0; j < GridSize; ++j) {
+            printf("%02d ", Matrix[i][j]);
+        }
+        printf("\n");   // Take a new line after printing each row
+    }
+    printf("\n");  // Take a new line after printing entire grid
+}
+
+
+void initialize_2D_Grid(int **Matrix, int nrows, int ncols, int my_id) {
+    for (int i = 0; i < nrows; ++i) {
+        for (int j = 0; j < ncols; ++j) {
+            Matrix[i][j] = my_id;
+        }
+    }
+}
+
+
+void create_2D_matrix(int ***Matrix, int nrows, int ncols) {
+    assert(*Matrix == NULL); // Check, if *Matrix = NULL. An empty Matrix is necessary!
+    *Matrix = (int **) malloc(nrows * sizeof(int *));
+    if (*Matrix == NULL) {
+        perror("Failed to allocate memory for matrix");
+        exit(EXIT_FAILURE);
+    }
+    int *data = (int *) malloc(nrows * ncols * sizeof(int));
+    if(data == NULL){
+        perror("Failed to allocate memory for the data block of the matrix");
+        exit(EXIT_FAILURE);
+    }
+    for(int i = 0; i< nrows; ++i){
+        (*Matrix)[i] = &(data[i*ncols]);
+    }
 }
