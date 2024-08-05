@@ -6,16 +6,16 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 5
-
+#define numb_iterations 10
+#define console_output true
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
 #define W 1 // 0001
 #define E 4 // 0100
 char filename[250]; // Puffer für den Dateinamen, ausreichend groß
-char path[] = "../Grids/";
-char image_name [] = "../resizedImage.txt";
+char path[] = "Grids/";
+char image_name [] = "resizedImage.txt";
 /* mögliche Zustände der Zelle:
  * 0010  2  1001  9  1011 11
  * 0001  1  1100 12  1101 13
@@ -141,10 +141,10 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 3;
+    int subGridSize = 10;
     int subGridLayers = 3;
-    // int MainMatrixsize = subGridSize * processorGridSize;
-    int MainMatrixsize = 9;
+    int MainMatrixsize = subGridSize * processorGridSize;
+    // int MainMatrixsize = 9;
     // allocate SubMatrices for all processors
     int*** SubMatrix = NULL;
     //create matrix buffer:
@@ -184,11 +184,19 @@ int main(int argc, char** argv) {
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
         // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
 
-        // set initial particles
-        // SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
-        // SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
-        GlobalMatrix[1][2][0] = S; // setting an initial particle
-        GlobalMatrix[2][2][0] = N; // setting an initial particle
+        set initial particles
+        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
+        SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
+        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
+        SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
+
+        // int particletypes[4] = {N, S,  W, E};
+        // for(int p = 0; p < 300; p++) {
+        //     int x = rand() % MainMatrixsize; // Get a random x-coordinate.
+        //     int y = rand() % MainMatrixsize; // Get a random y-coordinate.
+        //     int particle = rand() % 4; // Select a random particle.
+        //     GlobalMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
+        // }
 
         // Allocate and initialize the temporary (buffer) matrix.
         create_matrix(&BufferMatrix, subGridSize, subGridSize, subGridLayers);
@@ -197,10 +205,11 @@ int main(int argc, char** argv) {
         distributeSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
 
         int step = 0;
-        sprintf(filename, "%sgrid_%i.txt",path, step);
+        sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
         printf("%s: \n", filename);
-        printGrid(GlobalMatrix,MainMatrixsize,0);
-        saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
+        if(console_output){printGrid(GlobalMatrix,MainMatrixsize,0);}
+
+        saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
     }
 
     if (my_id != 0) {
@@ -243,12 +252,14 @@ int main(int argc, char** argv) {
         // sending all subgrids to process 0 so it can fill the main grid with it:
         if (my_id == 0) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-            sprintf(filename, "%sgrid_%i.txt",path, step+1);
+            sprintf(filename, "%sencrypting_grid_%i.txt",path, step+1);
             printf("%s: \n", filename);
-            printGrid(GlobalMatrix,MainMatrixsize,val2);
-            printf("Encrypting File: \n");
-            printGrid(GlobalMatrix,MainMatrixsize,2);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+            if(console_output){
+                printGrid(GlobalMatrix,MainMatrixsize,val2);
+                printf("Encrypting File: \n");
+                printGrid(GlobalMatrix,MainMatrixsize,2);
+            }
+            saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
@@ -272,12 +283,13 @@ int main(int argc, char** argv) {
         printf("---------------------- start Decryption ---------------\n");
         // removing Particle Encryption by subtraction
         gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-        sprintf(filename, "%sgrid_%i.txt",path, 0);
+        sprintf(filename, "%sdecrypting_grid_%i.txt",path, 0);
+        if(console_output){
         printf("%s: \n", filename);
         printGrid(GlobalMatrix,MainMatrixsize,1);
         printf("Decrypted Matrix: \n");
-        printGrid(GlobalMatrix,MainMatrixsize,2);
-        // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
+        printGrid(GlobalMatrix,MainMatrixsize,2);}
+        saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
     }
 
     if (my_id != 0) {
@@ -316,12 +328,14 @@ int main(int argc, char** argv) {
         // sending all subgrids to process 0 so it can fill the main grid with it:
         if (my_id == 0) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-            sprintf(filename, "%sgrid_%i.txt",path, step+1);
-            printf("%s: \n", filename);
-            printGrid(GlobalMatrix,MainMatrixsize,val2);
-            printf("Decryption File: \n");
-            printGrid(GlobalMatrix,MainMatrixsize,2);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+            sprintf(filename, "%sdecrypting_grid_%i.txt",path, step+1);
+            if(console_output) {
+                printf("%s: \n", filename);
+                printGrid(GlobalMatrix,MainMatrixsize,val2);
+                printf("Decryption File: \n");
+                printGrid(GlobalMatrix,MainMatrixsize,2);
+            }
+            saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
