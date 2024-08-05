@@ -47,7 +47,7 @@ int main() {
         handleCollisions(grid); // bearbeite kollidierende partikel N<->S, E<->W
 
          // print resulting grid to console:
-        printf("Grid after step %d:\n", step + 1);
+        printf("Grids after step %d:\n", step + 1);
         printGrid(grid);
         // char filename[20]; // erzeuge array of chars um Dateinamen zu speichern
         // sprintf(filename, "grid_%d.txt", step + 1); // generiere Dateiname und speichere ihn ab
@@ -69,7 +69,7 @@ void initializeGrid(int grid[GRID_SIZE][GRID_SIZE]) {
 }
 
 void moveParticles(int grid[GRID_SIZE][GRID_SIZE]) {
-    int newGrid[GRID_SIZE][GRID_SIZE] = {0};  // erzeuge ein neues Grid das den nächsten schritt enthält
+    int newGrid[GRID_SIZE][GRID_SIZE] = {0};  // erzeuge ein neues Grids das den nächsten schritt enthält
 
     // gehe durch das gesamte alte grid und wende die Zustandsübergangstabelle an
 # pragma omp parallel for
@@ -89,7 +89,7 @@ void moveParticles(int grid[GRID_SIZE][GRID_SIZE]) {
 
         }
     }
-    // überschreibe das alte Grid mit den neuen Zellwerten
+    // überschreibe das alte Grids mit den neuen Zellwerten
     for (int i = 0; i < GRID_SIZE; ++i) {
         for (int j = 0; j < GRID_SIZE; ++j) {
             grid[i][j] = newGrid[i][j];

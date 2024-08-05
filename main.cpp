@@ -6,8 +6,9 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 10
+#define numb_iterations 50
 #define console_output true
+
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -172,7 +173,7 @@ int main(int argc, char** argv) {
     int ***BufferMatrix = NULL;
 
     if(my_id == 0) {
-        // print information about Grid sizes
+        // print information about Grids sizes
         printf("Number of Processors:%i \n", num_procs);
         printf("Processor Gridzize: %i x %i \n", processorGridSize, processorGridSize);
         printf("Subgridsize: %i x %i \n", subGridSize, subGridSize);
@@ -184,19 +185,29 @@ int main(int argc, char** argv) {
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
         // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
 
-        set initial particles
-        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
-        SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
-        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
-        SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
+        //particle cases:
+        //case bounce back:
+        // GlobalMatrix[MainMatrixsize-1][2][0] = S; // setting an initial particle
+        // GlobalMatrix[1][2][0] = N; // setting an initial particle
+        // GlobalMatrix[1][MainMatrixsize-1][0] = E; // setting an initial particle
+        // GlobalMatrix[4][1][0] = W; // setting an initial particle
 
-        // int particletypes[4] = {N, S,  W, E};
-        // for(int p = 0; p < 300; p++) {
-        //     int x = rand() % MainMatrixsize; // Get a random x-coordinate.
-        //     int y = rand() % MainMatrixsize; // Get a random y-coordinate.
-        //     int particle = rand() % 4; // Select a random particle.
-        //     GlobalMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
-        // }
+        // // case collidinig particles:
+        //  GlobalMatrix[2][2][0] = S; // setting an initial particle
+        //  GlobalMatrix[4][2][0] = N; // setting an initial particle
+        //  GlobalMatrix[5][4][0] = E; // setting an initial particle
+        //  GlobalMatrix[5][6][0] = W; // setting an initial particle
+
+
+
+        // set initial particles
+        int particletypes[4] = {N, S,  W, E};
+        for(int p = 0; p < 20; p++) {
+            int x = rand() % MainMatrixsize; // Get a random x-coordinate.
+            int y = rand() % MainMatrixsize; // Get a random y-coordinate.
+            int particle = rand() % 4; // Select a random particle.
+            GlobalMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
+        }
 
         // Allocate and initialize the temporary (buffer) matrix.
         create_matrix(&BufferMatrix, subGridSize, subGridSize, subGridLayers);
@@ -208,8 +219,9 @@ int main(int argc, char** argv) {
         sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
         printf("%s: \n", filename);
         if(console_output){printGrid(GlobalMatrix,MainMatrixsize,0);}
+        saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
 
-        saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
+        // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename); // save Image
     }
 
     if (my_id != 0) {
@@ -234,7 +246,7 @@ int main(int argc, char** argv) {
             step = 4, val1 = 0, val2 = 1
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
-        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
+        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
         handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
@@ -259,7 +271,9 @@ int main(int argc, char** argv) {
                 printf("Encrypting File: \n");
                 printGrid(GlobalMatrix,MainMatrixsize,2);
             }
-            saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
+            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+
+            // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
@@ -270,8 +284,15 @@ int main(int argc, char** argv) {
 
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-    int Decrypt_Map[10] = {0, E, S, 0, W, 10, 0, 0, N, 5};
+    int Decrypt_Map[11] = {0, E, S, 0, W, 10, 0, 0, N, 0, 5};
     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
+
+    // for (int i = 0; i < subGridSize; ++i) {
+    //     for (int j = 0; j < subGridSize; ++j) {
+    //         SubMatrix[i][j][0] = SubMatrix[i][j][1];
+    //     }
+    // }
+
 
     for (int i = 0; i < subGridSize; ++i) {
         for (int j = 0; j < subGridSize; ++j) {
@@ -286,10 +307,13 @@ int main(int argc, char** argv) {
         sprintf(filename, "%sdecrypting_grid_%i.txt",path, 0);
         if(console_output){
         printf("%s: \n", filename);
-        printGrid(GlobalMatrix,MainMatrixsize,1);
+        printGrid(GlobalMatrix,MainMatrixsize,0);
         printf("Decrypted Matrix: \n");
         printGrid(GlobalMatrix,MainMatrixsize,2);}
-        saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
+
+        saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
+
+        // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
     }
 
     if (my_id != 0) {
@@ -310,7 +334,7 @@ int main(int argc, char** argv) {
             step = 4, val1 = 0, val2 = 1
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
-        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
+        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
         handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
@@ -335,7 +359,9 @@ int main(int argc, char** argv) {
                 printf("Decryption File: \n");
                 printGrid(GlobalMatrix,MainMatrixsize,2);
             }
-            saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
+            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+
+            // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
@@ -791,7 +817,7 @@ void load_matrix_from_file(int*** Matrix, const char* filename, int rowCount, in
 
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
     // Define a lookup table to map each direction to its opposite
-    int flip_map[10] = {0, E, S, 0, W, 10, 0, 0, N, 5};
+    int flip_map[11] = {0, E, S, 0, W, 10, 0, 0, N, 0, 5};
 
     for (int layer = 0; layer < nlayers; ++layer) {
         for (int row = 0; row < nrows; ++row) {

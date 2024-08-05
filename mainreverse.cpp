@@ -6,7 +6,7 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 5
+#define numb_iterations 20
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -173,16 +173,29 @@ int main(int argc, char** argv) {
     int ***GlobalMatrix = NULL;  //
     int ***BufferMatrix = NULL;
     if(my_id == 0) {
-        // set initial particles
-        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
-        SubMatrix[2][int(subGridSize/2)][0] = N; // setting an initial particle
-        // SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
-        // SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
+
         // allocate the global matrix for processor 0
         create_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers);
         // initialization of GlobalMatrix
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers, 0);
-        // print information about Grid sizes
+
+        // case collidinig particles:
+        SubMatrix[2][2][0] = N; // setting an initial particle
+        SubMatrix[4][2][0] = S; // setting an initial particle
+        SubMatrix[5][4][0] = W; // setting an initial particle
+        SubMatrix[5][6][0] = E; // setting an initial particle
+
+        // set initial particles
+        int particletypes[4] = {N, S,  W, E};
+        for(int p = 0; p < 20; p++) {
+            int x = rand() % subGridSize; // Get a random x-coordinate.
+            int y = rand() % subGridSize; // Get a random y-coordinate.
+            int particle = rand() % 4; // Select a random particle.
+            SubMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
+        }
+
+
+        // print information about Grids sizes
         printf("Number of Processors:%i \n", num_procs);
         printf("Processor Gridzize: %i x %i \n", processorGridSize, processorGridSize);
         printf("Subgridsize: %i x %i \n", subGridSize, subGridSize);
@@ -220,7 +233,7 @@ int main(int argc, char** argv) {
             step = 4, val1 = 0, val2 = 1
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
-        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
+        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
         handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
@@ -245,11 +258,11 @@ int main(int argc, char** argv) {
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
 
-        // if(step >= numb_iterations/2 && flipping == 1) {
-        //
-        //     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
-        //     flipping = 0;
-        // }
+        if(step >= numb_iterations/2 && flipping == 1) {
+
+            flipDirections(SubMatrix, subGridSize, subGridSize, 2);
+            flipping = 0;
+        }
 
 
     }
@@ -684,7 +697,7 @@ double** load_matrix_from_file(const char* filename, int rowCount, int colCount)
 
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
     // Define a lookup table to map each direction to its opposite
-    int flip_map[10] = {0, E, S, 0, W, 10, 0, 0, N, 5};
+    int flip_map[11] = {0, E, S, 0, W, 10, 0, 0, N, 0, 5};
 
     for (int layer = 0; layer < nlayers; ++layer) {
         for (int row = 0; row < nrows; ++row) {
