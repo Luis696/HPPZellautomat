@@ -14,8 +14,7 @@
 #define W 1 // 0001
 #define E 4 // 0100
 char filename[250]; // Puffer für den Dateinamen, ausreichend groß
-char path[] = "../Grids/";
-char image_name [] = "../resizedImage.txt";
+char path[] = "Grids/";
 /* mögliche Zustände der Zelle:
  * 0010  2  1001  9  1011 11
  * 0001  1  1100 12  1101 13
@@ -33,7 +32,7 @@ void create_matrix(int * ***Matrix, int nrows, int ncols, int nlayers);
 void destroy_matrix(int * ***Matrix, int nrows, int nlayers);
 void create_vector(int **vector, int SubGridSize);
 void destroy_vector(int **vector);
-void load_matrix_from_file(int*** Matrix, const char* filename, int rowCount, int colCount, int layer);
+
 void initializeGrid(int ***Matrix, int nrows, int , int nlayers,int initializing_value);
 void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, int edge);
 void handleCollisions(int ***Matrix, int SubGridSize, int OLD);
@@ -43,9 +42,6 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW,int OLD, int
                  int *top_edge_roll_over, int *bottom_edge_roll_over, int *left_edge, int *right_edge, int edge);
 void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix, int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers);
-void distributeSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix,  int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
-
-
 
 int main(int argc, char** argv) {
     // printf("\n\n--------- Environmet settings:---------- \n");
@@ -141,10 +137,10 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 3;
-    int subGridLayers = 3;
-    // int MainMatrixsize = subGridSize * processorGridSize;
-    int MainMatrixsize = 9;
+    int subGridSize = 10;
+    int subGridLayers = 2;
+    int MainMatrixsize = subGridSize * processorGridSize;
+
     // allocate SubMatrices for all processors
     int*** SubMatrix = NULL;
     //create matrix buffer:
@@ -168,52 +164,51 @@ int main(int argc, char** argv) {
     // sprintf(filename, "../Grids/grid_start.txt");
     // sending all subgrids to process 0 so it can fill the main grid with it:
     //
+    if (my_id != 0) {
+        // send your submatrix
+        MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+    // // MPI_Barrier(MPI_COMM_WORLD);
+    //
     int ***GlobalMatrix = NULL;  //
     int ***BufferMatrix = NULL;
-
     if(my_id == 0) {
+        // set initial particles
+        SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
+        SubMatrix[2][int(subGridSize/2)][0] = N; // setting an initial particle
+        // SubMatrix[int(subGridSize/2)][int(subGridSize/2)][0] = W; // setting an initial particle
+        // SubMatrix[int(subGridSize/2)][0][0] = E; // setting an initial particle
+        // allocate the global matrix for processor 0
+        create_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers);
+        // initialization of GlobalMatrix
+        initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers, 0);
         // print information about Grid sizes
         printf("Number of Processors:%i \n", num_procs);
         printf("Processor Gridzize: %i x %i \n", processorGridSize, processorGridSize);
         printf("Subgridsize: %i x %i \n", subGridSize, subGridSize);
         printf("Main Matrix size: %i x %i \n\n", MainMatrixsize, MainMatrixsize);
-
-
-        // allocate the global matrix for processor 0
-        create_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers);
-        initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
-        // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
-
-        // set initial particles
-        // SubMatrix[1][int(subGridSize/2)][0] = S; // setting an initial particle
-        // SubMatrix[3][int(subGridSize/2)][0] = N; // setting an initial particle
-        GlobalMatrix[1][2][0] = S; // setting an initial particle
-        GlobalMatrix[2][2][0] = N; // setting an initial particle
-
         // Allocate and initialize the temporary (buffer) matrix.
-        create_matrix(&BufferMatrix, subGridSize, subGridSize, subGridLayers);
 
-        // collecting all Subgrids from all processors
-        distributeSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
+        create_matrix(&BufferMatrix, subGridSize, subGridSize, subGridLayers);
 
         int step = 0;
         sprintf(filename, "%sgrid_%i.txt",path, step);
+        // collecting all Subgrids from all processors
+        gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
         printf("%s: \n", filename);
         printGrid(GlobalMatrix,MainMatrixsize,0);
         saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
+
     }
 
-    if (my_id != 0) {
-        // send your submatrix
-         MPI_Recv(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
+    //
+    // // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
     MPI_Barrier(MPI_COMM_WORLD);
 
+    int flipping = 1;
     int val1, val2 = 0;
-    // ------------------------------------------------ start the Encryption itteration of the grid: -----------------------------------------------
-    if(my_id == 0){printf("---------------------- start Encryption ---------------\n");}
+    // ------------------------------------------------ start the itteration of the grid: -----------------------------------------------
+
     for (int step = 0; step < numb_iterations; ++step) {
         // Erzeuge den Dateinamen mit der Iterationsnummer
         int val1 = step % 2; // alternate depending on the step
@@ -233,103 +228,45 @@ int main(int argc, char** argv) {
 
         moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
 
-        // Adding Particle values on image for Encryting Image Data
-        for (int i = 0; i < subGridSize; ++i) {
-            for (int j = 0; j < subGridSize; ++j) {
-                SubMatrix[i][j][2] += SubMatrix[i][j][val2];
-            }
-        }
+
+
+
 
         // sending all subgrids to process 0 so it can fill the main grid with it:
         if (my_id == 0) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-            sprintf(filename, "%sgrid_%i.txt",path, step+1);
+            sprintf(filename, "%sgrid_%i.txt",path, step);
             printf("%s: \n", filename);
             printGrid(GlobalMatrix,MainMatrixsize,val2);
-            printf("Encrypting File: \n");
-            printGrid(GlobalMatrix,MainMatrixsize,2);
             saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
         }
         if (my_id != 0) {
             // send your submatrix
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
+
+        // if(step >= numb_iterations/2 && flipping == 1) {
+        //
+        //     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
+        //     flipping = 0;
+        // }
+
+
     }
-    // ---------------------------------------------------- finished the Encryption of the grid: ----------------------------------
+    // ---------------------------------------------------- finished the itteration of the grid: ----------------------------------
 
-
-    // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-    int Decrypt_Map[10] = {0, E, S, 0, W, 10, 0, 0, N, 5};
-    flipDirections(SubMatrix, subGridSize, subGridSize, 2);
-
-    for (int i = 0; i < subGridSize; ++i) {
-        for (int j = 0; j < subGridSize; ++j) {
-            SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][val2]];
-        }
-    }
-
-    if (my_id == 0) {
-        printf("---------------------- start Decryption ---------------\n");
-        // removing Particle Encryption by subtraction
-        gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-        sprintf(filename, "%sgrid_%i.txt",path, 0);
-        printf("%s: \n", filename);
-        printGrid(GlobalMatrix,MainMatrixsize,1);
-        printf("Decrypted Matrix: \n");
-        printGrid(GlobalMatrix,MainMatrixsize,2);
-        // saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename);
-    }
-
-    if (my_id != 0) {
-        // send your submatrix
-        MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
-
-
-    val1, val2 = 0;
-    for (int step = 0; step < numb_iterations; ++step) {
-        // Erzeuge den Dateinamen mit der Iterationsnummer
-        int val1 = step % 2; // alternate depending on the step
-        int val2 = 1 - val1; // inverse of val1
-        /*  step = 0, val1 = 0, val2 = 1
-            step = 1, val1 = 1, val2 = 0
-            step = 2, val1 = 0, val2 = 1
-            step = 3, val1 = 1, val2 = 0
-            step = 4, val1 = 0, val2 = 1
-         */
-        // printf("value1: %i,  value2: %i \n",val1,val2);
-        // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grid
-        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
-        // Teilen der Randwerte mit den benachbarten Prozessoren
-        share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
-                    left_edge, right_edge, edge);
-
-        moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
-
-        // Adding Particle values on image for Encryting Image Data
-        for (int i = 0; i < subGridSize; ++i) {
-            for (int j = 0; j < subGridSize; ++j) {
-                SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][val2]];
-            }
-        }
-
-        // sending all subgrids to process 0 so it can fill the main grid with it:
-        if (my_id == 0) {
-            gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-            sprintf(filename, "%sgrid_%i.txt",path, step+1);
-            printf("%s: \n", filename);
-            printGrid(GlobalMatrix,MainMatrixsize,val2);
-            printf("Decryption File: \n");
-            printGrid(GlobalMatrix,MainMatrixsize,2);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
-        }
-        if (my_id != 0) {
-            // send your submatrix
-            MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
-        }
-    }
-
-
+    // sprintf(filename, "../Grids/grid_finished.txt");
+    // // sending all subgrids to process 0 after finishing itterations so it can fill the main grid with it:
+    // if (my_id == 0) {
+    //     // Define the filename for saving the grid
+    //     gatherSubgrids(SubMatrix, subGridSize, GlobalMatrix, num_procs, processorGridSize,filename); // gather all subgrids and write it to a file
+    // }
+    // else {
+    //     // send your submatrix
+    //     MPI_Send(&(SubMatrix[0][0][val2]), subGridSize * subGridSize, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    // }
+    //
+    //
     MPI_Barrier(MPI_COMM_WORLD);
     // Free allocated memory:
     destroy_matrix(&SubMatrix,subGridSize, 2);
@@ -347,13 +284,6 @@ int main(int argc, char** argv) {
     return 0;
     MPI_Finalize();
 }
-
-
-
-
-
-
-
 
 
 
@@ -457,7 +387,7 @@ void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename
         fprintf(file, "\n");  // nachdem eine ganze Zeile geschrieben wurde beende die Line
     }
     fclose(file);  // schließe die Datei wieder
-    printf("saved grid to file\n\n");
+    printf("saved grid to file\n");
 }
 
 // not continuouse memory allocation
@@ -727,51 +657,28 @@ void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMat
     }
 }
 
-void distributeSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix,  int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename) {
-    // Assign root processors own SubMatrix from Global Matrix
-    for (int i = 0; i < subGridSize; ++i) {
-        for (int j = 0; j < subGridSize; ++j) {
-            for(int k = 0; k<subGridLayers; k++){
-                ownSubMatrix[i][j][k] = GlobalMatrix[i][j][k];
-            }
-        }
-    }
 
-    // Assign SubMatrices to all other processors
-    for (int p = 1; p < num_procs; ++p) {
-        // Determine the starting coordinates for the submatrix in the global matrix.
-        int start_row = (p / processorGridSize) * subGridSize;
-        int start_col = (p % processorGridSize) * subGridSize;
-
-        // Assign the submatrix values from the global matrix to the buffer matrix.
-        for (int i = 0; i < subGridSize; ++i) {
-            for (int j = 0; j < subGridSize; ++j) {
-                for(int k = 0; k<subGridLayers; k++){
-                    BufferMatrix[i][j][k] = GlobalMatrix[start_row+i][start_col+j][k];
-                }
-            }
-        }
-
-        // Send buffer matrices to the other processes.
-        MPI_Send(&(BufferMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, p, 0, MPI_COMM_WORLD);
-    }
-}
-
-void load_matrix_from_file(int*** Matrix, const char* filename, int rowCount, int colCount, int layer)
-{
+double** load_matrix_from_file(const char* filename, int rowCount, int colCount) {
     // Open the file
     FILE* file = fopen(filename, "r");
     if (file == NULL) {
         printf("Could not open file %s\n", filename);
-        return;
+        return NULL;
     }
+
+    // Allocate matrix
+    double** matrix = (double**)malloc(rowCount * sizeof(double*));
+    for (int i = 0; i < rowCount; ++i)
+        matrix[i] = (double*)malloc(colCount * sizeof(double));
 
     // Read matrix from file
     for (int i = 0; i < rowCount; ++i)
         for (int j = 0; j < colCount; ++j)
-            fscanf(file, "%d", &Matrix[i][j][layer]);
+            fscanf(file, "%lf", &matrix[i][j]);
 
     fclose(file);
+
+    return matrix;
 }
 
 
