@@ -381,25 +381,25 @@ void moveParticles(int ***Matrix, int SubGridSize, int OLD,int NEW, int my_id, i
         for (j = 0; j < SubGridSize; ++j) {
             if (Matrix[i][j][OLD] & N) {
                 if (i > 0) Matrix[i-1][j][NEW] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (i == 0 && (edge & N)) Matrix[i+1][j][NEW] |= S; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (i == 0 && (edge & N)) Matrix[i][j][NEW] |= S; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~N; // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & S) {
                 if (i < SubGridSize - 1) Matrix[i+1][j][NEW] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (i == SubGridSize - 1 && (edge & S)) Matrix[i-1][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (i == SubGridSize - 1 && (edge & S)) Matrix[i][j][NEW] |= N; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~S;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & W) {
                 if (j > 0) Matrix[i][j-1][NEW] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == 0 && (edge & W)) Matrix[i][j+1][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == 0 && (edge & W)) Matrix[i][j][NEW] |= E;  // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~W;  // wenn Partikel bewegt, lösche alte Position
             }
 
             if (Matrix[i][j][OLD] & E) {
                 if (j < SubGridSize - 1) Matrix[i][j+1][NEW] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-                if (j == SubGridSize - 1 && (edge & E)) Matrix[i][j-1][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
+                if (j == SubGridSize - 1 && (edge & E)) Matrix[i][j][NEW] |= W; // if hitting a frame bounce back -> ONLY for the Submatrixes which are the edges of the main Matrix
                 Matrix[i][j][OLD] &= ~E;  // wenn Partikel bewegt, lösche alte Position
             }
         }
