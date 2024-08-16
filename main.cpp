@@ -6,8 +6,9 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 50
+#define numb_iterations 20
 #define console_output true
+#define crypted_file_output true
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -17,16 +18,27 @@
 char filename[250]; // Puffer für den Dateinamen, ausreichend groß
 char path[] = "Grids/";
 char image_name [] = "resizedImage.txt";
-/* mögliche Zustände der Zelle:
- * 0010  2  1001  9  1011 11
- * 0001  1  1100 12  1101 13
- * 1000  8  0110  6  1110 14
- * 0100  4  0101  5  0111  7
- * 0011  3  1010 10  1111 15
- *
- * Collosions: 5, 10
- * 5 = E & W collosion
- * 10 = N & S collosion
+/*
+* 0000 0: Kein Partikel
+* 0001 1: Partikel geht nach Westen (W)
+* 0010 2: Partikel geht nach Norden (N)
+* 0011 3: Partikel gehen nach Norden und Westen (N & W)
+* 0100 4: Partikel geht nach Osten (E)
+* 0101 5: Partikel gehen nach Osten und Westen (E & W)
+* 0110 6: Partikel gehen nach Norden und Osten (N & E)
+* 0111 7: Partikel gehen nach Norden, Osten und Westen (N & E & W)
+* 1000 8: Partikel geht nach Süden (S)
+* 1001 9: Partikel gehen nach Süden und Westen (S & W)
+* 1010 10: Partikel gehen nach Süden und Norden (S & N)
+* 1011 11: Partikel gehen nach Süden, Norden und Westen (S & N & W)
+* 1100 12: Partikel gehen nach Süden und Osten (S & E)
+* 1101 13: Partikel gehen nach Süden, Osten und Westen (S & E & W)
+* 1110 14: Partikel gehen nach Süden, Norden und Osten (S & N & E)
+* 1111 15: Partikel gehen in alle Richtungen (S & N & E & W)
+*
+* Kollisionen: 5, 10
+* 5 = Kollision zwischen Osten und Westen (E & W)
+* 10 = Kollision zwischen Süden und Norden (S & N)
 */
 
 // definiere alle Funktionen die wir brauchen
@@ -45,6 +57,7 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW,int OLD, int
 void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix, int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers);
 void distributeSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix,  int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
+void print_vector(int vector, int vectorsize);
 
 
 
@@ -142,7 +155,7 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 10;
+    int subGridSize = 3;
     int subGridLayers = 3;
     int MainMatrixsize = subGridSize * processorGridSize;
     // int MainMatrixsize = 9;
@@ -185,12 +198,12 @@ int main(int argc, char** argv) {
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
         // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
 
-        //particle cases:
-        //case bounce back:
-        // GlobalMatrix[MainMatrixsize-1][2][0] = S; // setting an initial particle
-        // GlobalMatrix[1][2][0] = N; // setting an initial particle
-        // GlobalMatrix[1][MainMatrixsize-1][0] = E; // setting an initial particle
-        // GlobalMatrix[4][1][0] = W; // setting an initial particle
+        // particle cases:
+        // case bounce back:
+        // GlobalMatrix[1][2][0] = S; // setting an initial particle
+        // GlobalMatrix[3][2][0] = N; // setting an initial particle
+        // GlobalMatrix[2][1][0] = E; // setting an initial particle
+        // GlobalMatrix[2][3][0] = W; // setting an initial particle
 
         // // case collidinig particles:
         //  GlobalMatrix[2][2][0] = S; // setting an initial particle
@@ -202,7 +215,7 @@ int main(int argc, char** argv) {
 
         // set initial particles
         int particletypes[4] = {N, S,  W, E};
-        for(int p = 0; p < 20; p++) {
+        for(int p = 0; p < 50; p++) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
             int y = rand() % MainMatrixsize; // Get a random y-coordinate.
             int particle = rand() % 4; // Select a random particle.
@@ -268,8 +281,10 @@ int main(int argc, char** argv) {
             printf("%s: \n", filename);
             if(console_output){
                 printGrid(GlobalMatrix,MainMatrixsize,val2);
-                printf("Encrypting File: \n");
-                printGrid(GlobalMatrix,MainMatrixsize,2);
+                if(crypted_file_output) {
+                    printf("Encrypting File: \n");
+                    printGrid(GlobalMatrix,MainMatrixsize,2);
+                }
             }
             saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
 
@@ -284,14 +299,15 @@ int main(int argc, char** argv) {
 
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-    int Decrypt_Map[11] = {0, E, S, 0, W, 10, 0, 0, N, 0, 5};
+    int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+
     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
 
-    // for (int i = 0; i < subGridSize; ++i) {
-    //     for (int j = 0; j < subGridSize; ++j) {
-    //         SubMatrix[i][j][0] = SubMatrix[i][j][1];
-    //     }
-    // }
+    for (int i = 0; i < subGridSize; ++i) {
+        for (int j = 0; j < subGridSize; ++j) {
+            SubMatrix[i][j][0] = SubMatrix[i][j][1];
+        }
+    }
 
 
     for (int i = 0; i < subGridSize; ++i) {
@@ -308,8 +324,11 @@ int main(int argc, char** argv) {
         if(console_output){
         printf("%s: \n", filename);
         printGrid(GlobalMatrix,MainMatrixsize,0);
-        printf("Decrypted Matrix: \n");
-        printGrid(GlobalMatrix,MainMatrixsize,2);}
+            if(crypted_file_output) {
+                printf("Decrypted Matrix: \n");
+                printGrid(GlobalMatrix,MainMatrixsize,2);
+            }
+        }
 
         saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
 
@@ -356,8 +375,10 @@ int main(int argc, char** argv) {
             if(console_output) {
                 printf("%s: \n", filename);
                 printGrid(GlobalMatrix,MainMatrixsize,val2);
-                printf("Decryption File: \n");
-                printGrid(GlobalMatrix,MainMatrixsize,2);
+                if(crypted_file_output) {
+                    printf("Decryption File: \n");
+                    printGrid(GlobalMatrix,MainMatrixsize,2);
+                }
             }
             saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
 
@@ -368,6 +389,7 @@ int main(int argc, char** argv) {
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
     }
+    // ---------------------------------------------------- finished the Decryption of the grid: ----------------------------------
 
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -453,24 +475,24 @@ void handleCollisions(int ***Matrix, int SubGridSize, int OLD) {
     for (i = 0; i < SubGridSize; ++i) {
         for (j = 0; j < SubGridSize; ++j) {
             int cell = Matrix[i][j][OLD];
-            if ((cell & N) && (cell & S)) { // wenn in der Zelle Nord- und Südpartikel vorhanden sind
-                cell &= ~(N | S); // entferne Sie die Nord- und Südpartikel
-                cell |= (W | E);  // fügen West- und Ostpartikel hinzu
-                //printf("!N & S Collosion!");
+            if((cell == 5) || (cell == 10)) {
+                if ((cell & N) && (cell & S)) { // wenn in der Zelle Nord- und Südpartikel vorhanden sind
+                    cell &= ~(N | S); // entferne die Nord- und Südpartikel
+                    cell |= (W | E);  // fügen West- und Ostpartikel hinzu
+                    //printf("!N & S Collosion!");
 
-            }
+                }
 
-            else if((cell & W) && (cell & E)) { // wenn in der Zelle West und Ostpartikel vorhanden sind
-                cell &= ~(W | E); // entfernen Sie die West- und Ostpartikel
-                cell |= (N | S);  // fügen Nord- und Südpartikel hinzu
-                //printf("!W & E Collosion!");
+                else if((cell & W) && (cell & E)) { // wenn in der Zelle West und Ostpartikel vorhanden sind
+                    cell &= ~(W | E); // entferne die West- und Ostpartikel
+                    cell |= (N | S);  // fügen Nord- und Südpartikel hinzu
+                    //printf("!W & E Collosion!");
+                }
+                Matrix[i][j][OLD] = cell;
             }
-            Matrix[i][j][OLD] = cell; // setze die aktuelle Zelle im grid auf den neuen Wert
         }
     }
 }
-
-
 
 void printGrid(int ***Matrix, int GridSize, int layer) {
     for (int i = 0; i < GridSize; ++i) {
@@ -499,50 +521,6 @@ void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename
     fclose(file);  // schließe die Datei wieder
     printf("saved grid to file\n\n");
 }
-
-// not continuouse memory allocation
-// void create_matrix(int ****Matrix, int nrows, int ncols, int nlayers)
-// {
-//     assert ( *Matrix == NULL );    // Check, if *A=NULL. Empty A is necessary!
-//
-//     *Matrix = (int***) malloc(nrows * sizeof(int**));
-//     if(*Matrix == NULL){
-//         perror("Failed to allocate memory for matrix");
-//         exit(EXIT_FAILURE);
-//     }
-//
-//     for(int i = 0; i < nrows; i++){
-//         (*Matrix)[i] = (int**) malloc(ncols * sizeof(int*));
-//         if((*Matrix)[i] == NULL){
-//             perror("Failed to allocate memory for matrix");
-//             exit(EXIT_FAILURE);
-//         }
-//
-//         for(int j = 0; j < ncols; j++){
-//             (*Matrix)[i][j] = (int*) malloc(nlayers * sizeof(int));
-//             if((*Matrix)[i][j] == NULL){
-//                 perror("Failed to allocate memory for matrix");
-//                 exit(EXIT_FAILURE);
-//             }
-//         }
-//     }
-// }
-// void destroy_matrix(int ****Matrix, int nrows, int nlayers) {
-//     // Check, if *A != NULL. non-empty A is necessary!
-//     assert(*Matrix != NULL);   // If condition is FALSE, program aborts!
-//
-//     // free the memory
-//     int i, j;
-//     for (i = 0; i < nlayers; ++i) {
-//         for (j = 0; j < nrows; ++j) {
-//             free((*Matrix)[i][j]);
-//         }
-//         free((*Matrix)[i]);
-//     }
-//     free(*Matrix);
-//
-//     *Matrix = NULL;  // Set the pointer to NULL to avoid dangling pointer issues
-// }
 
 
 // continouse memory allocation:
@@ -641,6 +619,15 @@ void print_2D_Grid(int **Matrix, int GridSize) {
 }
 
 
+void print_vector(int *vector, int vectorsize) {
+    for (int i = 0; i < vectorsize; ++i) {
+            printf("%02d ", vector[i]);
+    }
+    printf("\n");  // Take a new line after printing entire grid
+}
+
+
+
 void initialize_2D_Grid(int **Matrix, int nrows, int ncols, int my_id) {
     for (int i = 0; i < nrows; ++i) {
         for (int j = 0; j < ncols; ++j) {
@@ -663,17 +650,27 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
     // -------------------------------- Ränder übergeben -----------------------------
     // entnehme oberen und unteren Rand aus der Matrix
     for (int i = 0; i < SubGridSize; ++i) {
-        if (Matrix[0][i][OLD] != N || (edge & N)) {
+        if (Matrix[0][i][OLD] != N || (edge & N)) { // if particle is not moving north OR if subgrid has northern edge
             top_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
+        }
+        else {
             top_edge_roll_over[i] = Matrix[0][i][OLD]; // erste Zeile alle Spalten von NEW
         }
 
-        if (Matrix[SubGridSize - 1][i][OLD] != S || (edge & S)) {
+        if(Matrix[0][i][OLD] & N && !(edge & N)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Norden unterwegs ist und Subgrid keine Nordkante hat übergebe Nordpartikel an nächstes Subgrid
+            top_edge_roll_over[i] = N;
+        }
+
+        if (Matrix[SubGridSize - 1][i][OLD] != S || (edge & S)) { // if particle is not moving south OR if subgrid has southern edge
             bottom_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
         } else {
             bottom_edge_roll_over[i] = Matrix[SubGridSize - 1][i][OLD]; // letzte Zeile alle Spalten von NEW
         }
+
+        if(Matrix[SubGridSize - 1][i][OLD] & S && !(edge & S)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Süden unterwegs ist und Subgrid keine Südkante hat übergebe Südpartikel an nächstes Subgrid
+            bottom_edge_roll_over[i] = S;
+        }
+
     }
 
     // Alle Subgrids reichen ihren oberen rand weiter and das Subgrid über ihnen:
@@ -705,11 +702,17 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
         } else {
             left_edge[i] = Matrix[i][0][OLD];
         }
+        if(Matrix[i][0][OLD] & W && !(edge & W)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Westen unterwegs ist und Subgrid keine Westenkante hat übergebe Westpartikel an nächstes Subgrid
+            left_edge[i] = W;
+        }
 
         if (Matrix[i][SubGridSize - 1][OLD] != E || (edge & E)) {
             right_edge[i] = 0; // set array element to 0 if it is not equal to N
         } else {
             right_edge[i] = Matrix[i][SubGridSize - 1][OLD];
+        }
+        if(Matrix[i][SubGridSize - 1][OLD] & E && !(edge & E)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Osten unterwegs ist und Subgrid keine Ostkante hat übergebe Ostpartikel an nächstes Subgrid
+            right_edge[i] = E;
         }
     }
 
@@ -816,8 +819,10 @@ void load_matrix_from_file(int*** Matrix, const char* filename, int rowCount, in
 
 
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
-    // Define a lookup table to map each direction to its opposite
-    int flip_map[11] = {0, E, S, 0, W, 10, 0, 0, N, 0, 5};
+    /* FlipMap Lookup Table
+    * Jede Partikelrichtung wird zu ihrer entgegengesetzten Richtung gewechselt.
+    */
+    int flip_map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
 
     for (int layer = 0; layer < nlayers; ++layer) {
         for (int row = 0; row < nrows; ++row) {
