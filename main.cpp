@@ -646,26 +646,17 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
     // -------------------------------- Ränder übergeben -----------------------------
     // entnehme oberen und unteren Rand aus der Matrix
     for (int i = 0; i < SubGridSize; ++i) {
-        if (Matrix[0][i][OLD] != N || (edge & N)) { // if particle is not moving north OR if subgrid has northern edge
-            top_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
-        }
-        else {
-            top_edge_roll_over[i] = Matrix[0][i][OLD]; // erste Zeile alle Spalten von NEW
-        }
-
-        if(Matrix[0][i][OLD] & N && !(edge & N)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Norden unterwegs ist und Subgrid keine Nordkante hat übergebe Nordpartikel an nächstes Subgrid
+        if (Matrix[0][i][OLD] & N && !(edge & N)) { // if particle is moving north and if subgrid has not northern edge
             top_edge_roll_over[i] = N;
+            Matrix[0][i][OLD] &=~N; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else{top_edge_roll_over[i] = 0;}
 
-        if (Matrix[SubGridSize - 1][i][OLD] != S || (edge & S)) { // if particle is not moving south OR if subgrid has southern edge
-            bottom_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            bottom_edge_roll_over[i] = Matrix[SubGridSize - 1][i][OLD]; // letzte Zeile alle Spalten von NEW
-        }
-
-        if(Matrix[SubGridSize - 1][i][OLD] & S && !(edge & S)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Süden unterwegs ist und Subgrid keine Südkante hat übergebe Südpartikel an nächstes Subgrid
+        if (Matrix[SubGridSize - 1][i][OLD] & S && !(edge & S)) { // if particle is moving south and if subgrid has not southern edge
             bottom_edge_roll_over[i] = S;
+            Matrix[SubGridSize - 1][i][OLD] &= ~S; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else{bottom_edge_roll_over[i] = 0;}
 
     }
 
@@ -693,23 +684,21 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
 
 
     for (int i = 0; i < SubGridSize; ++i) {
-        if (Matrix[i][0][OLD] != W || (edge & W)) { // checke if partikel auch wirklich nach Westen unterwegs und ob es sich nicht um einen Rand handelt
-            left_edge[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            left_edge[i] = Matrix[i][0][OLD];
-        }
-        if(Matrix[i][0][OLD] & W && !(edge & W)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Westen unterwegs ist und Subgrid keine Westenkante hat übergebe Westpartikel an nächstes Subgrid
-            left_edge[i] = W;
-        }
 
-        if (Matrix[i][SubGridSize - 1][OLD] != E || (edge & E)) {
-            right_edge[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            right_edge[i] = Matrix[i][SubGridSize - 1][OLD];
+        if (Matrix[i][0][OLD] & W && !(edge & W)) { // checke if partikel auch wirklich nach Westen unterwegs und ob es sich nicht um einen Rand handelt
+            left_edge[i] = W;
+            Matrix[i][0][OLD] &= ~W; // wenn Partikel übergeben, entferne es aus der Matrix
         }
-        if(Matrix[i][SubGridSize - 1][OLD] & E && !(edge & E)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Osten unterwegs ist und Subgrid keine Ostkante hat übergebe Ostpartikel an nächstes Subgrid
+        else {left_edge[i] = 0;}
+
+
+        if (Matrix[i][SubGridSize - 1][OLD] & E && !(edge & E)) {
             right_edge[i] = E;
+            Matrix[i][SubGridSize - 1][OLD] &= ~E; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else {right_edge[i] = 0;}
+
+
     }
 
     // Sende linken Rand und empfange linken Rand von rechtem Prozessor -> damit unser neuer rechter Rand
