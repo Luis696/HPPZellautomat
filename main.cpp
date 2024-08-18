@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 10;
+    int subGridSize = 3;
     int subGridLayers = 3;
     int MainMatrixsize = subGridSize * processorGridSize;
     // int MainMatrixsize = 9;
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
 
         // set initial particles
         int particletypes[4] = {N, S,  W, E};
-        for(int p = 0; p < 200; p++) {
+        for(int p = 0; p < 80; p++) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
             int y = rand() % MainMatrixsize; // Get a random y-coordinate.
             int particle = rand() % 4; // Select a random particle.
