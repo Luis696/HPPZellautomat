@@ -7,8 +7,9 @@
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
 #define numb_iterations 10
-#define console_output false
-
+#define console_output true
+#define collosion_on false
+#define show_file false
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -19,22 +20,22 @@ char filename_message[250];
 char path[] = "Grids/";
 char image_name [] = "resizedImage.txt";
 /*
-* 0000 0: Kein Partikel
-* 0001 1: Partikel geht nach Westen (W)
-* 0010 2: Partikel geht nach Norden (N)
-* 0011 3: Partikel gehen nach Norden und Westen (N & W)
-* 0100 4: Partikel geht nach Osten (E)
-* 0101 5: Partikel gehen nach Osten und Westen (E & W)
-* 0110 6: Partikel gehen nach Norden und Osten (N & E)
-* 0111 7: Partikel gehen nach Norden, Osten und Westen (N & E & W)
-* 1000 8: Partikel geht nach Süden (S)
-* 1001 9: Partikel gehen nach Süden und Westen (S & W)
-* 1010 10: Partikel gehen nach Süden und Norden (S & N)
-* 1011 11: Partikel gehen nach Süden, Norden und Westen (S & N & W)
-* 1100 12: Partikel gehen nach Süden und Osten (S & E)
-* 1101 13: Partikel gehen nach Süden, Osten und Westen (S & E & W)
-* 1110 14: Partikel gehen nach Süden, Norden und Osten (S & N & E)
-* 1111 15: Partikel gehen in alle Richtungen (S & N & E & W)
+* 0000 0: Kein Partikel +
+* 0001 1: Partikel geht nach Westen (W) +
+* 0010 2: Partikel geht nach Norden (N) +
+* 0011 3: Partikel gehen nach Norden und Westen (N & W) +
+* 0100 4: Partikel geht nach Osten (E) +
+* 0101 5: Partikel gehen nach Osten und Westen (E & W) KOLLOSION +
+* 0110 6: Partikel gehen nach Norden und Osten (N & E) +
+* 0111 7: Partikel gehen nach Norden, Osten und Westen (N & E & W) + maybe also a Kollosion ?
+* 1000 8: Partikel geht nach Süden (S) +
+* 1001 9: Partikel gehen nach Süden und Westen (S & W) +
+* 1010 10: Partikel gehen nach Süden und Norden (S & N) KOLLOSION +
+* 1011 11: Partikel gehen nach Süden, Norden und Westen (S & N & W) + maybe also a Kollosion ?
+* 1100 12: Partikel gehen nach Süden und Osten (S & E) +
+* 1101 13: Partikel gehen nach Süden, Osten und Westen (S & E & W) + maybe also a Kollosion ?
+* 1110 14: Partikel gehen nach Süden, Norden und Osten (S & N & E) + maybe also a Kollosion ?
+* 1111 15: Partikel gehen in alle Richtungen (S & N & E & W) +
 *
 * Kollisionen: 5, 10
 * 5 = Kollision zwischen Osten und Westen (E & W)
@@ -190,22 +191,14 @@ int main(int argc, char** argv) {
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
         // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
 
-        // particle cases:
-        // case bounce back:
-        // GlobalMatrix[1][2][0] = S; // setting an initial particle
-        // GlobalMatrix[3][2][0] = N; // setting an initial particle
-        // GlobalMatrix[2][1][0] = E; // setting an initial particle
-        // GlobalMatrix[2][3][0] = W; // setting an initial particle
-
-        // // case collidinig particles:
-        //  GlobalMatrix[2][2][0] = S; // setting an initial particle
-        //  GlobalMatrix[4][2][0] = N; // setting an initial particle
-        //  GlobalMatrix[5][4][0] = E; // setting an initial particle
-        //  GlobalMatrix[5][6][0] = W; // setting an initial particle
+        // // N & S & E & W @ edge = W +
+        // GlobalMatrix[0][0][0] |= S; // setting an initial particle
+        // GlobalMatrix[0][0][0] |= N; // setting an initial particle
+        // GlobalMatrix[0][0][0] |= E; // setting an initial particle
+        // GlobalMatrix[0][0][0] |= W; // setting an initial particle
 
 
-
-        // set initial particles
+        // set random initial particles
         int particletypes[4] = {N, S,  W, E};
         for(int p = 0; p < 80; p++) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
@@ -254,7 +247,9 @@ int main(int argc, char** argv) {
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
-        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
+        if(collosion_on) {
+            handleCollisions(SubMatrix, subGridSize, val1);
+        }// check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
                     left_edge, right_edge, edge);
@@ -275,8 +270,10 @@ int main(int argc, char** argv) {
             printf("%s: \n", filename);
             if(console_output){
                 printGrid(GlobalMatrix,MainMatrixsize,val2);
-                printf("Encrypting File: \n");
-                printGrid(GlobalMatrix,MainMatrixsize,2);
+                if(show_file) {
+                    printf("Encrypting File: \n");
+                    printGrid(GlobalMatrix,MainMatrixsize,2);
+                }
             }
 
             // save Grid with particles:
@@ -295,7 +292,8 @@ int main(int argc, char** argv) {
 
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-    int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+    // int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+    int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 13, 2, 6, 5, 14, 3, 7, 11, 15};
 
     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
 
@@ -313,8 +311,10 @@ int main(int argc, char** argv) {
         if(console_output){
         printf("%s: \n", filename);
         printGrid(GlobalMatrix,MainMatrixsize,0);
-        printf("Decrypted Matrix: \n");
-        printGrid(GlobalMatrix,MainMatrixsize,2);
+            if(show_file) {
+                printf("Decrypted Matrix: \n");
+                printGrid(GlobalMatrix,MainMatrixsize,2);
+            }
         }
         // save grid with particles:
         sprintf(filename, "%sdecrypting_grid_%i.txt",path, 0);
@@ -344,7 +344,9 @@ int main(int argc, char** argv) {
          */
         // printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
-        handleCollisions(SubMatrix, subGridSize, val1); // check for collions FIRST and change directions of particles if needed
+        if(collosion_on) {
+            handleCollisions(SubMatrix, subGridSize, val1);
+        }// check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
         share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
                     left_edge, right_edge, edge);
@@ -366,8 +368,10 @@ int main(int argc, char** argv) {
             if(console_output) {
                 printf("%s: \n", filename);
                 printGrid(GlobalMatrix,MainMatrixsize,val2);
-                printf("Decryption File: \n");
-                printGrid(GlobalMatrix,MainMatrixsize,2);
+                if(show_file) {
+                    printf("Decryption File: \n");
+                    printGrid(GlobalMatrix,MainMatrixsize,2);
+                }
             }
             // save grid with particles:
             sprintf(filename, "%sdecrypting_grid_%i.txt",path, step+1);
@@ -814,7 +818,8 @@ void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
     /* FlipMap Lookup Table
     * Jede Partikelrichtung wird zu ihrer entgegengesetzten Richtung gewechselt.
     */
-    int flip_map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+    // int flip_map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+    int flip_map[16] = {0, 4, 8, 12, 1, 10, 9, 13, 2, 6, 5, 14, 3, 7, 11, 15};
 
     for (int layer = 0; layer < nlayers; ++layer) {
         for (int row = 0; row < nrows; ++row) {

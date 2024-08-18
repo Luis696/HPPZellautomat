@@ -1,0 +1,52 @@
+// particle cases:
+// case bounce back: +
+// GlobalMatrix[1][2][0] = S; // setting an initial particle
+// GlobalMatrix[3][2][0] = N; // setting an initial particle
+// GlobalMatrix[2][1][0] = E; // setting an initial particle
+// GlobalMatrix[2][3][0] = W; // setting an initial particle
+//
+// case collidinig particles: +
+//  GlobalMatrix[2][2][0] = S; // setting an initial particle
+//  GlobalMatrix[4][2][0] = N; // setting an initial particle
+//  GlobalMatrix[5][4][0] = E; // setting an initial particle
+//  GlobalMatrix[5][6][0] = W; // setting an initial particle
+//
+// case multiple particles in one field: +
+// GlobalMatrix[2][2][0] |= S; // setting an initial particle
+// GlobalMatrix[2][2][0] |= N; // setting an initial particle
+// GlobalMatrix[2][2][0] |= E; // setting an initial particle
+// GlobalMatrix[2][2][0] |= W; // setting an initial particle
+//
+
+--------------------------------------------------------------------------------------
+// case multiple particles @ an edge:
+
+// N & E @ edge = N: +
+// GlobalMatrix[1][2][0] |= N; // setting an initial particle
+// GlobalMatrix[0][1][0] |= E; // setting an initial particle
+
+// N & S @ edge = N: +
+// GlobalMatrix[0][2][0] |= S; // setting an initial particle
+// GlobalMatrix[0][2][0] |= N; // setting an initial particle
+
+// N & S @ edge = S: +
+// GlobalMatrix[MainMatrixsize-1][2][0] |= S; // setting an initial particle
+// GlobalMatrix[MainMatrixsize-1][2][0] |= N; // setting an initial particle
+
+// N & S & E & W @ edge = N +
+// GlobalMatrix[0][2][0] |= S; // setting an initial particle
+// GlobalMatrix[0][2][0] |= N; // setting an initial particle
+// GlobalMatrix[0][2][0] |= E; // setting an initial particle
+// GlobalMatrix[0][2][0] |= W; // setting an initial particle
+
+// N & S & E & W @ edge = S +
+// GlobalMatrix[MainMatrixsize-1][2][0] |= S; // setting an initial particle
+// GlobalMatrix[MainMatrixsize-1][2][0] |= N; // setting an initial particle
+// GlobalMatrix[MainMatrixsize-1][2][0] |= E; // setting an initial particle
+// GlobalMatrix[MainMatrixsize-1][2][0] |= W; // setting an initial particle
+
+// N & S & E & W @ edge = E +
+GlobalMatrix[0][MainMatrixsize-1][0] |= S; // setting an initial particle
+GlobalMatrix[0][MainMatrixsize-1][0] |= N; // setting an initial particle
+GlobalMatrix[0][MainMatrixsize-1][0] |= E; // setting an initial particle
+GlobalMatrix[0][MainMatrixsize-1][0] |= W; // setting an initial particle
