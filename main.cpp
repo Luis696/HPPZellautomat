@@ -6,8 +6,8 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 20
-#define console_output true
+#define numb_iterations 10
+#define console_output false
 
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
 
         // set initial particles
         int particletypes[4] = {N, S,  W, E};
-        for(int p = 0; p < 50; p++) {
+        for(int p = 0; p < 200; p++) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
             int y = rand() % MainMatrixsize; // Get a random y-coordinate.
             int particle = rand() % 4; // Select a random particle.
@@ -397,9 +397,9 @@ int main(int argc, char** argv) {
     destroy_vector(&left_edge);
     destroy_vector(&right_edge);
     // printf("vectors of processor %i succesfully destroyed... \n",my_id);
-
-    return 0;
     MPI_Finalize();
+    return 0;
+
 }
 
 
@@ -497,7 +497,7 @@ void printGrid(int ***Matrix, int GridSize, int layer) {
 }
 
 void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename) {
-    printf("starting to save grid to file...\n");
+    // printf("starting to save grid to file...\n");
     FILE* file = fopen(filename, "w");  // erzeuge eine Datei und öffne sie
     if (!file) { // wenn öffnen nicht funktioniert, dann gebe mir einen Fehler aus
         perror("Failed to open file");
@@ -511,7 +511,7 @@ void saveGridToFile(int ***Matrix, int GridSize, int layer, const char* filename
         fprintf(file, "\n");  // nachdem eine ganze Zeile geschrieben wurde beende die Line
     }
     fclose(file);  // schließe die Datei wieder
-    printf("saved grid to file\n\n");
+    // printf("saved grid to file\n\n");
 }
 
 
