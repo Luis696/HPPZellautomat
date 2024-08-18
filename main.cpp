@@ -353,7 +353,7 @@ int main(int argc, char** argv) {
 
         moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
 
-        // Adding Particle values on image for Encryting Image Data
+        // subtracting Particle values on image for decrypting Image Data
         if(step < numb_iterations-1) {
             for (int i = 0; i < subGridSize; ++i) {
                 for (int j = 0; j < subGridSize; ++j) {
