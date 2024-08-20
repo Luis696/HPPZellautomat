@@ -4,11 +4,11 @@
 #include <mpi.h>
 #include <cmath>
 #include <assert.h>
-
+#include <string.h>
 //#define GRID_SIZE 0 // lege die größe des grids fest
 #define numb_iterations 43
 #define collosion_on true
-#define debug_mode true
+#define debug_mode false
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -156,9 +156,10 @@ int main(int argc, char** argv) {
 
 
     int subGridSize = 3;
-    int subGridLayers = 3;
+    int subGridLayers = 2;
     int MainMatrixsize = subGridSize * processorGridSize;
-    // int MainMatrixsize = 9;
+
+
     // allocate SubMatrices for all processors
     int*** SubMatrix = NULL;
     //create matrix buffer:
@@ -215,11 +216,9 @@ int main(int argc, char** argv) {
 
         int step = 0;
         sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
-        if(debug_mode){
-            printf("%s: \n", filename);
-            printf("---------------------- intial Grid ---------------\n");
-            printGrid(GlobalMatrix,MainMatrixsize,0);
-        }
+        printf("%s: \n", filename);
+        printf("---------------------- intial Grid ---------------\n");
+        printGrid(GlobalMatrix,MainMatrixsize,0);
         // save grid with particles, beginning state:
         saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
 
@@ -271,13 +270,13 @@ int main(int argc, char** argv) {
             sprintf(filename, "%sencrypting_grid_%i.txt",path, step+1);
             saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
         }
-        if (my_id != 0) {
+        if (my_id != 0 & debug_mode) {
             // send your submatrix
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
     }
     // ---------------------------------------------------- finished the Encryption of the grid: ----------------------------------
-
+    printf("---------------------- finished Encryption ---------------\n");
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
 
@@ -300,7 +299,7 @@ int main(int argc, char** argv) {
 
     }
 
-    if (my_id != 0) {
+    if (my_id != 0 & debug_mode) {
         // send your submatrix
         MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
@@ -340,16 +339,28 @@ int main(int argc, char** argv) {
 
             // save grid with particles:
             saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
-            // save message:
-            sprintf(filename_message, "%sdecrypting_message_%i.txt",path, step+1);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename_message);
         }
-        if (my_id != 0) {
+        if (my_id != 0 & debug_mode) {
             // send your submatrix
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
     }
+    printf("---------------------- finished Decryption ---------------\n");
     // ---------------------------------------------------- finished the Decryption of the grid: ----------------------------------
+
+
+    if (my_id == 0) {
+        gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
+        sprintf(filename, "%sdecrypting_grid_final.txt",path);
+        printf("%s: \n", filename);
+        printGrid(GlobalMatrix,MainMatrixsize,new_layer);
+        // save grid with particles:
+        saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
+    }
+    if (my_id != 0) {
+        // send your submatrix
+        MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
 
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -527,12 +538,12 @@ void destroy_matrix(int ****Matrix, int nrows, int ncols)
 
 
 //
-void create_vector(int **vector, int SubGridSize) {
+void create_vector(int **vector, int length) {
     // Check, if *vector == NULL. Non-empty vector is not allowed!
     assert(*vector == NULL); // If condition is FALSE, program aborts!
 
     // Allocate the necessary memory
-    *vector = (int*) malloc(SubGridSize * sizeof(int));
+    *vector = (int*) malloc(length * sizeof(int));
 
     // Check if the memory allocation was successful
     if (*vector == NULL) {
@@ -782,3 +793,4 @@ void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
         }
     }
 }
+

@@ -1,144 +1,142 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <omp.h>
+#include <string.h>
 
-#define GRID_SIZE 5 // lege die größe des grids fest
-#define numb_iterations 10
+// Funktionsprototypen
+char* generateStringFromOctalArray(int *arr, int length);
+void convertStringToOctalArray(char *str, int **octalArray, int *arrayLength);
+char* readStringFromFile(const char* filename);
+void writeStringToFile(const char* filename, const char* content);
+void print_vector(int *vector, int vectorsize);
 
-// Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
-#define N 2 // 0010
-#define S 8 // 1000
-#define W 1 // 0001
-#define E 4 // 0100
+int main(int argc, char** argv) {
 
-/* mögliche Zustände der Zelle:
- * 0010  2  1001  9  1011 11
- * 0001  1  1100 12  1101 13
- * 1000  8  0110  6  1110 14
- * 0100  4  0101  5  0111  7
- * 0011  3  1010 10  1111 15
- *
- * Collosions: 5, 10
-*/
+    const char* inputFilename = "../Messages/original_message.txt";
+    const char* outputFilename = "../Messages/decrypted_message.txt";
 
-// definiere alle Funktionen die wir brauchen
-void initializeGrid(int grid[GRID_SIZE][GRID_SIZE]);
-void moveParticles(int grid[GRID_SIZE][GRID_SIZE]);
-void handleCollisions(int grid[GRID_SIZE][GRID_SIZE]);
-void printGrid(int grid[GRID_SIZE][GRID_SIZE]);
-void saveGridToFile(int grid[GRID_SIZE][GRID_SIZE], const char* filename);
-
-int main() {
-    int num_of_threads = omp_get_max_threads();
-    printf("omp max threads %i \n",num_of_threads);
-    omp_set_num_threads(num_of_threads);
+    // char message[]= "Hello, World!";
+    // writeStringToFile("original_message.txt", message);
 
 
-    int grid[GRID_SIZE][GRID_SIZE];  // assign grid
-    initializeGrid(grid); // fill grid with random numbers
 
-    // frint the initial grid to console & saving it
-    printf("Initial grid:\n");
-    printGrid(grid);
-    saveGridToFile(grid, "grid_0.txt");
-
-    for (int step = 0; step < numb_iterations; ++step) {
-        moveParticles(grid);  // bewege alle Partikel entlang der Richtung
-        handleCollisions(grid); // bearbeite kollidierende partikel N<->S, E<->W
-
-         // print resulting grid to console:
-        printf("Grids after step %d:\n", step + 1);
-        printGrid(grid);
-        // char filename[20]; // erzeuge array of chars um Dateinamen zu speichern
-        // sprintf(filename, "grid_%d.txt", step + 1); // generiere Dateiname und speichere ihn ab
-        // saveGridToFile(grid, filename); // erzeuge eine .txt datei mit Dateiname und speichere darin das grid des aktuellen standes ab
+    char* inputMessage = readStringFromFile(inputFilename);
+    if (inputMessage == NULL) {
+        fprintf(stderr, "Fehler beim Lesen der Datei: %s\n", inputFilename);
+        return 1;
     }
-    printf("resulting array: \n");
-    printGrid(grid);
+
+    printf("original message: %s\n", inputMessage);
+
+    int *octal_array = NULL;
+    int octal_array_length = 0;
+
+    convertStringToOctalArray(inputMessage, &octal_array, &octal_array_length);
+
+    printf("converted message in octal: ");
+    print_vector(octal_array, octal_array_length);
+
+    char *reconstructedMessage = generateStringFromOctalArray(octal_array, octal_array_length);
+    printf("reconstructed message from octal: %s \n", reconstructedMessage);
+    // Schreibe den rekonvertierten String in die Ausgabedatei
+    writeStringToFile(outputFilename, reconstructedMessage);
+
+
+
+    // Speicher freigeben
+    free(inputMessage);
+    free(octal_array);
+    free(reconstructedMessage);
+
     return 0;
 }
 
-void initializeGrid(int grid[GRID_SIZE][GRID_SIZE]) {
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            //grid[i][j] = rand() % 16; // Zufälliger Zustand (0 bis 15) für alle möglichen Binärzustände, siehe Zustandsübergangstabelle
-            grid[i][j] = 0;
-        }
+char* generateStringFromOctalArray(int *arr, int length) {
+    if (length % 3 != 0) {
+        printf("Das Array muss eine durch 3 teilbare Länge haben.\n");
+        return NULL;
     }
-    grid[int(GRID_SIZE/2)][int(GRID_SIZE/2)]=N;
+
+    int resultLength = length / 3;
+    char *result = (char*)malloc(resultLength + 1); // +1 for null terminator
+    if (result == NULL) {
+        printf("Speicher konnte nicht zugewiesen werden.\n");
+        return NULL;
+    }
+
+    int index = 0;
+    for (int i = 0; i < length; i += 3) {
+        int octalValue = arr[i] * 64 + arr[i + 1] * 8 + arr[i + 2];
+        result[index++] = (char)octalValue;
+    }
+
+    result[index] = '\0'; // Null terminator for the string
+
+    return result;
 }
 
-void moveParticles(int grid[GRID_SIZE][GRID_SIZE]) {
-    int newGrid[GRID_SIZE][GRID_SIZE] = {0};  // erzeuge ein neues Grids das den nächsten schritt enthält
-
-    // gehe durch das gesamte alte grid und wende die Zustandsübergangstabelle an
-# pragma omp parallel for
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            if (grid[i][j] & N && i > 0) newGrid[i-1][j] |= N; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (grid[i][j] & N && i == 0) newGrid[i+1][j] |= S; // if hitting a frame flied bounce back
-
-            if (grid[i][j] & S && i < GRID_SIZE - 1) newGrid[i+1][j] |= S; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (grid[i][j] & S && i == GRID_SIZE - 1) newGrid[i-1][j] |= N; // if hitting a frame flied bounce back
-
-            if (grid[i][j] & W && j > 0) newGrid[i][j-1] |= W; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (grid[i][j] & W && j == 0) newGrid[i][j+1] |= E;  // if hitting a frame flied bounce back
-
-            if (grid[i][j] & E && j < GRID_SIZE - 1) newGrid[i][j+1] |= E; // checke in welche Richtung das Partikel unterwegs ist und schiebe es weiter
-            if (grid[i][j] & E && j == GRID_SIZE - 1) newGrid[i][j-1] |= W; // if hitting a frame flied bounce back
-
-        }
-    }
-    // überschreibe das alte Grids mit den neuen Zellwerten
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            grid[i][j] = newGrid[i][j];
-        }
-    }
-}
-
-void handleCollisions(int grid[GRID_SIZE][GRID_SIZE]) {
-#pragma omp parallel for
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            int cell = grid[i][j];
-            if ((cell & N) && (cell & S)) { // wenn in der Zelle Nord- und Südpartikel vorhanden sind
-                cell &= ~(N | S); // entferne Sie die Nord- und Südpartikel
-                cell |= (W | E);  // fügen West- und Ostpartikel hinzu
-            }
-            if ((cell & W) && (cell & E)) { // wenn in der Zelle West und Ostpartikel vorhanden sind
-                cell &= ~(W | E); // entfernen Sie die West- und Ostpartikel
-                cell |= (N | S);  // fügen Nord- und Südpartikel hinzu
-            }
-            grid[i][j] = cell; // setze die aktuelle Zelle im grid auf den neuen Wert
-        }
-    }
-}
-
-
-
-void printGrid(int grid[GRID_SIZE][GRID_SIZE]) {
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            printf("%02d ", grid[i][j]);
-        }
-        printf("\n");  // nach jeder ferigen Zeile beginn einen neuen Absatz
-    }
-    printf("\n");  // nachdem das gesamte grid ausgegeben wurde mache einen Absatz
-}
-
-void saveGridToFile(int grid[GRID_SIZE][GRID_SIZE], const char* filename) {
-    FILE* file = fopen(filename, "w");  // erzeuge eine Datei und öffne sie
-    if (!file) { // wenn öffnen nicht funktioniert, dann gebe mir einen Fehler aus
-        perror("Failed to open file");
+void convertStringToOctalArray(char *str, int **octalArray, int *arrayLength) {
+    int length = strlen(str);
+    *octalArray = (int*)malloc(length * 3 * sizeof(int));
+    if (*octalArray == NULL) {
+        printf("Speicher konnte nicht zugewiesen werden.\n");
         return;
     }
-    // sonst speichere das grid unter dem Dateinamen ab
-    for (int i = 0; i < GRID_SIZE; ++i) {
-        for (int j = 0; j < GRID_SIZE; ++j) {
-            fprintf(file, "%02d ", grid[i][j]);  // schreibe grid wert in die Datei
-        }
-        fprintf(file, "\n");  // nachdem eine ganze Zeile geschrieben wurde beende die Line
+
+    int index = 0;
+
+    for (int i = 0; i < length; i++) {
+        int asciiValue = (int)str[i];
+        char octalString[4];
+        sprintf(octalString, "%03o", asciiValue);
+
+        (*octalArray)[index++] = octalString[0] - '0';
+        (*octalArray)[index++] = octalString[1] - '0';
+        (*octalArray)[index++] = octalString[2] - '0';
     }
-    fclose(file);  // schließe die Datei wieder
+
+    *arrayLength = index;
+}
+
+void print_vector(int *vector, int vectorsize) {
+    for (int i = 0; i < vectorsize; ++i) {
+        printf("%02d ", vector[i]);
+    }
+    printf("\n");
+}
+
+char* readStringFromFile(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Fehler beim Öffnen der Datei");
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char* content = (char*)malloc(fileSize + 1);
+    if (content == NULL) {
+        perror("Fehler bei der Speicherzuweisung");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(content, 1, fileSize, file);
+    content[fileSize] = '\0';
+
+    fclose(file);
+    return content;
+}
+
+void writeStringToFile(const char* filename, const char* content) {
+    FILE* file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Fehler beim Öffnen der Datei");
+        return;
+    }
+
+    fprintf(file, "%s", content);
+
+    fclose(file);
 }
