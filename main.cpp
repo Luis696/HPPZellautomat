@@ -6,9 +6,9 @@
 #include <assert.h>
 #include <string.h>
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 43
+#define numb_iterations 5
 #define collosion_on true
-#define debug_mode false
+#define debug_mode true
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -17,7 +17,9 @@
 char filename[250]; // Puffer für den Dateinamen, ausreichend groß
 char filename_message[250];
 char path[] = "Grids/";
-char image_name [] = "resizedImage.txt";
+const char* inputFilename = "Messages/original_message.txt";
+const char* outputFilename = "Messages/decrypted_message.txt";
+
 /*
 * 0000 0: Kein Partikel +
 * 0001 1: Partikel geht nach Westen (W) +
@@ -57,8 +59,13 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW,int OLD, int
 void gatherSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix, int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
 void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers);
 void distributeSubgrids(int ***GlobalMatrix, int *** BufferMatrix, int *** ownSubMatrix,  int subGridSize, int subGridLayers, int MainMatrixsize , int num_procs, int processorGridSize, const char *filename);
-void print_vector(int vector, int vectorsize);
+void print_vector(int *vector, int vectorsize);
+//
 
+char* generateStringFromOctalArray(int *arr, int length);
+void convertStringToOctalArray(char *str, int **octalArray, int *arrayLength);
+char* readStringFromFile(const char* filename);
+void writeStringToFile(const char* filename, const char* content);
 
 
 int main(int argc, char** argv) {
@@ -155,7 +162,7 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 3;
+    int subGridSize = 15;
     int subGridLayers = 2;
     int MainMatrixsize = subGridSize * processorGridSize;
 
@@ -189,23 +196,45 @@ int main(int argc, char** argv) {
         // allocate the global matrix for processor 0
         create_matrix(&GlobalMatrix, MainMatrixsize, MainMatrixsize, subGridLayers);
         initializeGrid(GlobalMatrix, MainMatrixsize, MainMatrixsize,subGridLayers, 0);
-        // load_matrix_from_file(GlobalMatrix, image_name,MainMatrixsize,MainMatrixsize, 2);
 
-        // // N & S & E & W @ edge = W +
-        // GlobalMatrix[0][0][0] |= S; // setting an initial particle
-        // GlobalMatrix[0][0][0] |= N; // setting an initial particle
-        // GlobalMatrix[0][0][0] |= E; // setting an initial particle
-        // GlobalMatrix[0][0][0] |= W; // setting an initial particle
+        // read message and covert to ocal ASCI:
+        char* inputMessage = readStringFromFile(inputFilename);
+        if (inputMessage == NULL) {
+            fprintf(stderr, "Fehler beim Lesen der Datei: %s\n", inputFilename);
+            return 1;
+        }
+
+        printf("original message: %s\n", inputMessage);
+
+        int *octal_array = NULL;
+        int octal_array_length = 0;
+
+        convertStringToOctalArray(inputMessage, &octal_array, &octal_array_length);
+
+        printf("converted message in octal: ");
+        print_vector(octal_array, octal_array_length);
 
 
-        // set random initial particles
-        int particletypes[4] = {N, S,  W, E};
-        for(int p = 0; p < 80; p++) {
-            int x = rand() % MainMatrixsize; // Get a random x-coordinate.
-            int y = rand() % MainMatrixsize; // Get a random y-coordinate.
-            int particle = rand() % 4; // Select a random particle.
-            GlobalMatrix[x][y][0] = particletypes[particle];
+        // // set random initial particles
+        // int particletypes[4] = {N, S,  W, E};
+        // for(int p = 0; p < 80; p++) {
+        //     int x = rand() % MainMatrixsize; // Get a random x-coordinate.
+        //     int y = rand() % MainMatrixsize; // Get a random y-coordinate.
+        //     int particle = rand() % 4; // Select a random particle.
+        //     GlobalMatrix[x][y][0] = particletypes[particle];
+        //
+        // }
 
+        // override particles with message:
+        int index = 0;
+        for(int i = 0; i < MainMatrixsize; i++) {
+            for(int j = 0; j < MainMatrixsize; j++) {
+                if(index < octal_array_length) {
+                    GlobalMatrix[i][j][0] = octal_array[index++];
+                } else {
+                    GlobalMatrix[i][j][0] = 0;  // or some default value
+                }
+            }
         }
 
         // Allocate and initialize the temporary (buffer) matrix.
@@ -234,13 +263,22 @@ int main(int argc, char** argv) {
     //
     int new_layer = 0;
     int old_layer = 1;
+
+
+
+
+
+
+
+
+
     // ------------------------------------------------ start the Encryption itteration of the grid: -----------------------------------------------
     if(my_id == 0){printf("---------------------- start Encryption ---------------\n");}
     for (int step = 1; step < numb_iterations; ++step) {
         {int swap=new_layer; new_layer = old_layer; old_layer = swap;}
         if(debug_mode) {
-            printf("NEW: %i \n",new_layer);
-            printf("OLD: %i \n", old_layer);
+            // printf("NEW: %i \n",new_layer);
+            // printf("OLD: %i \n", old_layer);
         }
         /*  step = 0, val1 = 0, val2 = 1
             step = 1, val1 = 1, val2 = 0
@@ -275,16 +313,26 @@ int main(int argc, char** argv) {
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
     }
-    // ---------------------------------------------------- finished the Encryption of the grid: ----------------------------------
-    printf("---------------------- finished Encryption ---------------\n");
+    if(my_id == 0) printf("---------------------- finished Encryption ---------------\n");
+
+
+
+
+
+
+
+
+
+
+
+
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-
     int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 13, 2, 6, 5, 14, 3, 7, 11, 15};
 
-    if(debug_mode){printf("start flipping layer \n");}
+    if(debug_mode & my_id == 0){printf("start flipping layer \n");}
     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
-    if(debug_mode){printf("flipped layers\n");}
+    if(debug_mode & my_id == 0){printf("flipped layers\n");}
 
 
     if (my_id == 0 & debug_mode) {
@@ -309,8 +357,8 @@ int main(int argc, char** argv) {
         // Erzeuge den Dateinamen mit der Iterationsnummer
         {int swap=new_layer; new_layer = old_layer; old_layer = swap;}
         if(debug_mode) {
-            printf("NEW: %i \n",new_layer);
-            printf("OLD: %i \n", old_layer);
+            // printf("NEW: %i \n",new_layer);
+            // printf("OLD: %i \n", old_layer);
         }
         /*  step = 0, val1 = 0, val2 = 1
             step = 1, val1 = 1, val2 = 0
@@ -345,7 +393,7 @@ int main(int argc, char** argv) {
             MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
         }
     }
-    printf("---------------------- finished Decryption ---------------\n");
+    if(my_id == 0)printf("---------------------- finished Decryption ---------------\n");
     // ---------------------------------------------------- finished the Decryption of the grid: ----------------------------------
 
 
@@ -592,9 +640,9 @@ void print_2D_Grid(int **Matrix, int GridSize) {
 
 void print_vector(int *vector, int vectorsize) {
     for (int i = 0; i < vectorsize; ++i) {
-            printf("%02d ", vector[i]);
+        printf("%02d ", vector[i]);
     }
-    printf("\n");  // Take a new line after printing entire grid
+    printf("\n");
 }
 
 
@@ -794,3 +842,86 @@ void flipDirections(int ***Matrix, int nrows, int ncols, int nlayers) {
     }
 }
 
+char* generateStringFromOctalArray(int *arr, int length) {
+    if (length % 3 != 0) {
+        printf("Das Array muss eine durch 3 teilbare Länge haben.\n");
+        return NULL;
+    }
+
+    int resultLength = length / 3;
+    char *result = (char*)malloc(resultLength + 1); // +1 for null terminator
+    if (result == NULL) {
+        printf("Speicher konnte nicht zugewiesen werden.\n");
+        return NULL;
+    }
+
+    int index = 0;
+    for (int i = 0; i < length; i += 3) {
+        int octalValue = arr[i] * 64 + arr[i + 1] * 8 + arr[i + 2];
+        result[index++] = (char)octalValue;
+    }
+
+    result[index] = '\0'; // Null terminator for the string
+
+    return result;
+}
+
+void convertStringToOctalArray(char *str, int **octalArray, int *arrayLength) {
+    int length = strlen(str);
+    *octalArray = (int*)malloc(length * 3 * sizeof(int));
+    if (*octalArray == NULL) {
+        printf("Speicher konnte nicht zugewiesen werden.\n");
+        return;
+    }
+
+    int index = 0;
+
+    for (int i = 0; i < length; i++) {
+        int asciiValue = (int)str[i];
+        char octalString[4];
+        sprintf(octalString, "%03o", asciiValue);
+
+        (*octalArray)[index++] = octalString[0] - '0';
+        (*octalArray)[index++] = octalString[1] - '0';
+        (*octalArray)[index++] = octalString[2] - '0';
+    }
+
+    *arrayLength = index;
+}
+
+char* readStringFromFile(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Fehler beim Öffnen der Datei");
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char* content = (char*)malloc(fileSize + 1);
+    if (content == NULL) {
+        perror("Fehler bei der Speicherzuweisung");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(content, 1, fileSize, file);
+    content[fileSize] = '\0';
+
+    fclose(file);
+    return content;
+}
+
+void writeStringToFile(const char* filename, const char* content) {
+    FILE* file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Fehler beim Öffnen der Datei");
+        return;
+    }
+
+    fprintf(file, "%s", content);
+
+    fclose(file);
+}
