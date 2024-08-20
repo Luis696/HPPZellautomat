@@ -1,14 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <omp.h>
 #include <mpi.h>
 #include <cmath>
 #include <assert.h>
 #include <string.h>
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 7
+
 #define collosion_on true
 #define debug_mode false
+int subGridLayers = 2;
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -17,8 +19,8 @@
 char filename[250]; // Puffer für den Dateinamen, ausreichend groß
 char filename_message[250];
 char path[] = "Grids/";
-const char* inputFilename = "Messages/original_message.txt";
-const char* outputFilename = "Messages/decrypted_message.txt";
+// const char* inputFilename = "Messages/original_message.txt";
+// const char* outputFilename = "Messages/decrypted_message.txt";
 
 /*
 * 0000 0: Kein Partikel +
@@ -68,7 +70,17 @@ char* readStringFromFile(const char* filename);
 void writeStringToFile(const char* filename, const char* content);
 
 
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]) {
+
+    int MainMatrixsize = 300;
+    int numb_iterations = 50;
+    const char* inputFilename = "Messages/original_message.txt";
+    const char* outputFilename = "Messages/decrypted_message.txt";
+
+
+
+
+
     // printf("\n\n--------- Environmet settings:---------- \n");
     // ---------------  Initialize the MPI Environment:
     MPI_Status status;
@@ -149,7 +161,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    if(my_id == 0) {
+    if(my_id == 0 & debug_mode) {
         // Print off a hello world message from each processor
         printf("Hello from processor %s, rank %d out of %d processors\n "
                "--------my neighbours are ---------:\n"
@@ -161,12 +173,7 @@ int main(int argc, char** argv) {
         //---------------------------------------------------------------------------------
     }
 
-
-    int subGridSize = 15;
-    int subGridLayers = 2;
-    int MainMatrixsize = subGridSize * processorGridSize;
-
-
+    int subGridSize = MainMatrixsize / processorGridSize;
     // allocate SubMatrices for all processors
     int*** SubMatrix = NULL;
     //create matrix buffer:
@@ -189,10 +196,14 @@ int main(int argc, char** argv) {
 
     if(my_id == 0) {
         // print information about Grids sizes
+        printf("Programm started with: \n");
         printf("Number of Processors:%i \n", num_procs);
         printf("Processor Gridzize: %i x %i \n", processorGridSize, processorGridSize);
         printf("Subgridsize: %i x %i \n", subGridSize, subGridSize);
-        printf("Main Matrix size: %i x %i \n\n", MainMatrixsize, MainMatrixsize);
+        printf("Main Matrix size: %i x %i \n", MainMatrixsize, MainMatrixsize);
+        printf("number of encryption steps: %i\n", numb_iterations);
+        printf("path to original message: %s\n", inputFilename);
+        printf("path to decrypted message: %s\n\n", outputFilename);
 
 
         // allocate the global matrix for processor 0
@@ -273,7 +284,7 @@ int main(int argc, char** argv) {
 
 
 
-
+    double start_time = MPI_Wtime();
     // ------------------------------------------------ start the Encryption itteration of the grid: -----------------------------------------------
     if(my_id == 0){printf("---------------------- start Encryption ---------------\n");}
     for (int step = 1; step < numb_iterations; ++step) {
@@ -316,6 +327,8 @@ int main(int argc, char** argv) {
         }
     }
     if(my_id == 0) printf("---------------------- finished Encryption ---------------\n");
+    double end_time = MPI_Wtime();
+    printf("Time taken by process  %d for ENCRYPTION is %f\n", my_id, end_time - start_time);
 
 
 
@@ -326,9 +339,7 @@ int main(int argc, char** argv) {
 
 
 
-
-
-
+    start_time = MPI_Wtime();
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
     int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 13, 2, 6, 5, 14, 3, 7, 11, 15};
 
@@ -397,7 +408,8 @@ int main(int argc, char** argv) {
     }
     if(my_id == 0)printf("---------------------- finished Decryption ---------------\n");
     // ---------------------------------------------------- finished the Decryption of the grid: ----------------------------------
-
+    end_time = MPI_Wtime();
+    printf("Time taken by process %d for DECRYPTION is %f\n", my_id, end_time - start_time);
 
 
 
