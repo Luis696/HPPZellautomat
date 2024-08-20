@@ -6,9 +6,9 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 10
+#define numb_iterations 43
 #define console_output true
-#define collosion_on false
+#define collosion_on true
 #define show_file false
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -204,7 +204,8 @@ int main(int argc, char** argv) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
             int y = rand() % MainMatrixsize; // Get a random y-coordinate.
             int particle = rand() % 4; // Select a random particle.
-            GlobalMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
+            GlobalMatrix[x][y][0] = particletypes[particle];
+
         }
 
         // Allocate and initialize the temporary (buffer) matrix.
@@ -216,7 +217,10 @@ int main(int argc, char** argv) {
         int step = 0;
         sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
         printf("%s: \n", filename);
-        if(console_output){printGrid(GlobalMatrix,MainMatrixsize,0);}
+        if(console_output) {
+            printf("---------------------- intial Grid ---------------\n");
+            printGrid(GlobalMatrix,MainMatrixsize,0);
+        }
         // save grid with particles, beginning state:
         saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
         // save message:
@@ -231,14 +235,15 @@ int main(int argc, char** argv) {
 
     // gehe sicher, dass alle Prozessoren das gemacht haben bevor Sie weiter machen
     MPI_Barrier(MPI_COMM_WORLD);
-
-    int val1, val2 = 0;
+    //
+    int new_layer = 0;
+    int old_layer = 1;
     // ------------------------------------------------ start the Encryption itteration of the grid: -----------------------------------------------
     if(my_id == 0){printf("---------------------- start Encryption ---------------\n");}
-    for (int step = 0; step < numb_iterations; ++step) {
-        // Erzeuge den Dateinamen mit der Iterationsnummer
-        int val1 = step % 2; // alternate depending on the step
-        int val2 = 1 - val1; // inverse of val1
+    for (int step = 1; step < numb_iterations; ++step) {
+        {int swap=new_layer; new_layer = old_layer; old_layer = swap;}
+        printf("NEW: %i \n",new_layer);
+        printf("OLD: %i \n", old_layer);
         /*  step = 0, val1 = 0, val2 = 1
             step = 1, val1 = 1, val2 = 0
             step = 2, val1 = 0, val2 = 1
@@ -248,28 +253,28 @@ int main(int argc, char** argv) {
         // printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
         if(collosion_on) {
-            handleCollisions(SubMatrix, subGridSize, val1);
+            handleCollisions(SubMatrix, subGridSize, old_layer);
         }// check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
-        share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
+        share_edges(my_id, SubMatrix, subGridSize, new_layer,old_layer, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
                     left_edge, right_edge, edge);
 
-        moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
+        moveParticles(SubMatrix, subGridSize, old_layer, new_layer, my_id, edge);  // bewege alle Partikel entlang der Richtung
 
         // Adding Particle values on image for Encryting Image Data
         for (int i = 0; i < subGridSize; ++i) {
             for (int j = 0; j < subGridSize; ++j) {
-                SubMatrix[i][j][2] += SubMatrix[i][j][val2];
+                SubMatrix[i][j][2] += SubMatrix[i][j][new_layer];
             }
         }
 
         // sending all subgrids to process 0 so it can fill the main grid with it:
         if (my_id == 0) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-            sprintf(filename, "%sencrypting_grid_%i.txt",path, step+1);
+            sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
             printf("%s: \n", filename);
             if(console_output){
-                printGrid(GlobalMatrix,MainMatrixsize,val2);
+                printGrid(GlobalMatrix,MainMatrixsize,new_layer);
                 if(show_file) {
                     printf("Encrypting File: \n");
                     printGrid(GlobalMatrix,MainMatrixsize,2);
@@ -278,7 +283,7 @@ int main(int argc, char** argv) {
 
             // save Grid with particles:
             sprintf(filename, "%sencrypting_grid_%i.txt",path, step+1);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+            saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
             // save message:
             sprintf(filename_message, "%sencrypting_message_%i.txt",path, step+1);
             saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename_message);
@@ -292,33 +297,34 @@ int main(int argc, char** argv) {
 
 
     // ------------------------------------------------ start the Decryption itteration of the grid: -----------------------------------------------
-    // int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 11, 2, 6, 5, 7, 3, 7, 6, 0};
+
     int Decrypt_Map[16] = {0, 4, 8, 12, 1, 10, 9, 13, 2, 6, 5, 14, 3, 7, 11, 15};
 
+    printf("start flipping layer \n");
     flipDirections(SubMatrix, subGridSize, subGridSize, 2);
-
+    printf("flipped layers\n");
     for (int i = 0; i < subGridSize; ++i) {
         for (int j = 0; j < subGridSize; ++j) {
-            SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][val2]];
+            SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][new_layer]];
         }
     }
 
     if (my_id == 0) {
-        printf("---------------------- start Decryption ---------------\n");
+        printf("---------------------- intial Grid Decryption ---------------\n");
         // removing Particle Encryption by subtraction
         gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
 
+        sprintf(filename, "%sdecrypting_grid_%i.txt",path, 0);
         if(console_output){
         printf("%s: \n", filename);
-        printGrid(GlobalMatrix,MainMatrixsize,0);
+        printGrid(GlobalMatrix,MainMatrixsize,new_layer);
             if(show_file) {
                 printf("Decrypted Matrix: \n");
                 printGrid(GlobalMatrix,MainMatrixsize,2);
             }
         }
         // save grid with particles:
-        sprintf(filename, "%sdecrypting_grid_%i.txt",path, 0);
-        saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
+        saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
         // save message
         sprintf(filename_message, "%sdecrypting_message_%i.txt",path, 0);
         saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename_message);
@@ -330,12 +336,12 @@ int main(int argc, char** argv) {
         MPI_Send(&(SubMatrix[0][0][0]), subGridSize * subGridSize * subGridLayers, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
 
-
-    val1, val2 = 0;
-    for (int step = 0; step < numb_iterations; ++step) {
+    if(my_id == 0){printf("---------------------- start Decryption ---------------\n");}
+    for (int step = 1; step < numb_iterations; ++step) {
         // Erzeuge den Dateinamen mit der Iterationsnummer
-        int val1 = step % 2; // alternate depending on the step
-        int val2 = 1 - val1; // inverse of val1
+        {int swap=new_layer; new_layer = old_layer; old_layer = swap;}
+        printf("NEW: %i \n",new_layer);
+        printf("OLD: %i \n", old_layer);
         /*  step = 0, val1 = 0, val2 = 1
             step = 1, val1 = 1, val2 = 0
             step = 2, val1 = 0, val2 = 1
@@ -345,19 +351,19 @@ int main(int argc, char** argv) {
         // printf("value1: %i,  value2: %i \n",val1,val2);
         // CAVE: OLD grid needs to start @ layer 0 -> see initialize Grids
         if(collosion_on) {
-            handleCollisions(SubMatrix, subGridSize, val1);
+            handleCollisions(SubMatrix, subGridSize, old_layer);
         }// check for collions FIRST and change directions of particles if needed
         // Teilen der Randwerte mit den benachbarten Prozessoren
-        share_edges(my_id, SubMatrix, subGridSize, val2,val1, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
+        share_edges(my_id, SubMatrix, subGridSize, new_layer,old_layer, above, below, left, right, top_edge_roll_over, bottom_edge_roll_over,
                     left_edge, right_edge, edge);
 
-        moveParticles(SubMatrix, subGridSize, val1, val2, my_id, edge);  // bewege alle Partikel entlang der Richtung
+        moveParticles(SubMatrix, subGridSize, old_layer, new_layer, my_id, edge);  // bewege alle Partikel entlang der Richtung
 
         // subtracting Particle values on image for decrypting Image Data
         if(step < numb_iterations-1) {
             for (int i = 0; i < subGridSize; ++i) {
                 for (int j = 0; j < subGridSize; ++j) {
-                    SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][val2]];
+                    SubMatrix[i][j][2] -= Decrypt_Map[SubMatrix[i][j][new_layer]];
                 }
             }
         }
@@ -365,17 +371,17 @@ int main(int argc, char** argv) {
         // sending all subgrids to process 0 so it can fill the main grid with it:
         if (my_id == 0) {
             gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
+            sprintf(filename, "%sdecrypting_grid_%i.txt",path, step);
             if(console_output) {
                 printf("%s: \n", filename);
-                printGrid(GlobalMatrix,MainMatrixsize,val2);
+                printGrid(GlobalMatrix,MainMatrixsize,new_layer);
                 if(show_file) {
                     printf("Decryption File: \n");
                     printGrid(GlobalMatrix,MainMatrixsize,2);
                 }
             }
             // save grid with particles:
-            sprintf(filename, "%sdecrypting_grid_%i.txt",path, step+1);
-            saveGridToFile(GlobalMatrix, MainMatrixsize, val2, filename);
+            saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
             // save message:
             sprintf(filename_message, "%sdecrypting_message_%i.txt",path, step+1);
             saveGridToFile(GlobalMatrix, MainMatrixsize, 2, filename_message);
@@ -646,26 +652,17 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
     // -------------------------------- Ränder übergeben -----------------------------
     // entnehme oberen und unteren Rand aus der Matrix
     for (int i = 0; i < SubGridSize; ++i) {
-        if (Matrix[0][i][OLD] != N || (edge & N)) { // if particle is not moving north OR if subgrid has northern edge
-            top_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
-        }
-        else {
-            top_edge_roll_over[i] = Matrix[0][i][OLD]; // erste Zeile alle Spalten von NEW
-        }
-
-        if(Matrix[0][i][OLD] & N && !(edge & N)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Norden unterwegs ist und Subgrid keine Nordkante hat übergebe Nordpartikel an nächstes Subgrid
+        if (Matrix[0][i][OLD] & N && !(edge & N)) { // if particle is moving north and if subgrid has not northern edge
             top_edge_roll_over[i] = N;
+            Matrix[0][i][OLD] &=~N; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else{top_edge_roll_over[i] = 0;}
 
-        if (Matrix[SubGridSize - 1][i][OLD] != S || (edge & S)) { // if particle is not moving south OR if subgrid has southern edge
-            bottom_edge_roll_over[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            bottom_edge_roll_over[i] = Matrix[SubGridSize - 1][i][OLD]; // letzte Zeile alle Spalten von NEW
-        }
-
-        if(Matrix[SubGridSize - 1][i][OLD] & S && !(edge & S)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Süden unterwegs ist und Subgrid keine Südkante hat übergebe Südpartikel an nächstes Subgrid
+        if (Matrix[SubGridSize - 1][i][OLD] & S && !(edge & S)) { // if particle is moving south and if subgrid has not southern edge
             bottom_edge_roll_over[i] = S;
+            Matrix[SubGridSize - 1][i][OLD] &= ~S; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else{bottom_edge_roll_over[i] = 0;}
 
     }
 
@@ -693,23 +690,21 @@ void share_edges(int my_id, int ***Matrix, int SubGridSize, int NEW, int OLD, in
 
 
     for (int i = 0; i < SubGridSize; ++i) {
-        if (Matrix[i][0][OLD] != W || (edge & W)) { // checke if partikel auch wirklich nach Westen unterwegs und ob es sich nicht um einen Rand handelt
-            left_edge[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            left_edge[i] = Matrix[i][0][OLD];
-        }
-        if(Matrix[i][0][OLD] & W && !(edge & W)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Westen unterwegs ist und Subgrid keine Westenkante hat übergebe Westpartikel an nächstes Subgrid
-            left_edge[i] = W;
-        }
 
-        if (Matrix[i][SubGridSize - 1][OLD] != E || (edge & E)) {
-            right_edge[i] = 0; // set array element to 0 if it is not equal to N
-        } else {
-            right_edge[i] = Matrix[i][SubGridSize - 1][OLD];
+        if (Matrix[i][0][OLD] & W && !(edge & W)) { // checke if partikel auch wirklich nach Westen unterwegs und ob es sich nicht um einen Rand handelt
+            left_edge[i] = W;
+            Matrix[i][0][OLD] &= ~W; // wenn Partikel übergeben, entferne es aus der Matrix
         }
-        if(Matrix[i][SubGridSize - 1][OLD] & E && !(edge & E)) { // Überprüfe ob auf dem Rand eine Kollision liegt, wenn nach Kollision Partikel nach Osten unterwegs ist und Subgrid keine Ostkante hat übergebe Ostpartikel an nächstes Subgrid
+        else {left_edge[i] = 0;}
+
+
+        if (Matrix[i][SubGridSize - 1][OLD] & E && !(edge & E)) {
             right_edge[i] = E;
+            Matrix[i][SubGridSize - 1][OLD] &= ~E; // wenn Partikel übergeben, entferne es aus der Matrix
         }
+        else {right_edge[i] = 0;}
+
+
     }
 
     // Sende linken Rand und empfange linken Rand von rechtem Prozessor -> damit unser neuer rechter Rand
