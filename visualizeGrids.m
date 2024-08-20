@@ -23,7 +23,7 @@ numbers = cellfun(@(x) str2double(regexp(x, '\d+', 'match')), {txt_files.name});
     figure;
 % Loop through each txt file
 for k = sorted_indices 
-   
+    % figure;
     % Get the file name
    file_name = fullfile(folder_path, txt_files(k).name);
 

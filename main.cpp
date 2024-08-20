@@ -6,9 +6,9 @@
 #include <assert.h>
 
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 3
+#define numb_iterations 43
 #define console_output true
-#define collosion_on false
+#define collosion_on true
 #define show_file false
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     }
 
 
-    int subGridSize = 9;
+    int subGridSize = 3;
     int subGridLayers = 3;
     int MainMatrixsize = subGridSize * processorGridSize;
     // int MainMatrixsize = 9;
@@ -204,7 +204,8 @@ int main(int argc, char** argv) {
             int x = rand() % MainMatrixsize; // Get a random x-coordinate.
             int y = rand() % MainMatrixsize; // Get a random y-coordinate.
             int particle = rand() % 4; // Select a random particle.
-            GlobalMatrix[x][y][0] = particletypes[particle]; // Use the correct character for the selected particle.
+            GlobalMatrix[x][y][0] = particletypes[particle];
+
         }
 
         // Allocate and initialize the temporary (buffer) matrix.
