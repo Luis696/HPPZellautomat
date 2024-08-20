@@ -6,9 +6,9 @@
 #include <assert.h>
 #include <string.h>
 //#define GRID_SIZE 0 // lege die größe des grids fest
-#define numb_iterations 5
+#define numb_iterations 7
 #define collosion_on true
-#define debug_mode true
+#define debug_mode false
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
 #define S 8 // 1000
@@ -172,7 +172,7 @@ int main(int argc, char** argv) {
     //create matrix buffer:
     create_matrix(&SubMatrix,subGridSize,subGridSize,subGridLayers);
     initializeGrid(SubMatrix,subGridSize,subGridSize,subGridLayers, 0);
-    printf("created SubGrid processor %i ... \n",my_id);
+     if(debug_mode) {printf("created SubGrid processor %i ... \n",my_id);}
 
     // Allocate the edge buffers for all subgrids of all processors
     int *top_edge_roll_over = NULL, *bottom_edge_roll_over= NULL;
@@ -184,6 +184,8 @@ int main(int argc, char** argv) {
 
     int ***GlobalMatrix = NULL;  //
     int ***BufferMatrix = NULL;
+    int *octal_array = NULL;
+    int octal_array_length = 0;
 
     if(my_id == 0) {
         // print information about Grids sizes
@@ -203,36 +205,28 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Fehler beim Lesen der Datei: %s\n", inputFilename);
             return 1;
         }
-
-        printf("original message: %s\n", inputMessage);
-
-        int *octal_array = NULL;
-        int octal_array_length = 0;
+        if(debug_mode) {
+            printf("original message: %s\n", inputMessage);
+        }
 
         convertStringToOctalArray(inputMessage, &octal_array, &octal_array_length);
 
-        printf("converted message in octal: ");
-        print_vector(octal_array, octal_array_length);
+        if(debug_mode) {
+            printf("converted message in octal: ");
+            print_vector(octal_array, octal_array_length);
+        }
 
-
-        // // set random initial particles
-        // int particletypes[4] = {N, S,  W, E};
-        // for(int p = 0; p < 80; p++) {
-        //     int x = rand() % MainMatrixsize; // Get a random x-coordinate.
-        //     int y = rand() % MainMatrixsize; // Get a random y-coordinate.
-        //     int particle = rand() % 4; // Select a random particle.
-        //     GlobalMatrix[x][y][0] = particletypes[particle];
-        //
-        // }
 
         // override particles with message:
         int index = 0;
+        int particletypes[4] = {N, S,  W, E};
         for(int i = 0; i < MainMatrixsize; i++) {
             for(int j = 0; j < MainMatrixsize; j++) {
                 if(index < octal_array_length) {
                     GlobalMatrix[i][j][0] = octal_array[index++];
                 } else {
-                    GlobalMatrix[i][j][0] = 0;  // or some default value
+                    int particle = rand() % 4; // Select a random particle.
+                    GlobalMatrix[i][j][0] = particletypes[particle];
                 }
             }
         }
@@ -245,9 +239,11 @@ int main(int argc, char** argv) {
 
         int step = 0;
         sprintf(filename, "%sencrypting_grid_%i.txt",path, step);
-        printf("%s: \n", filename);
-        printf("---------------------- intial Grid ---------------\n");
-        printGrid(GlobalMatrix,MainMatrixsize,0);
+        if(debug_mode) {
+            printf("%s: \n", filename);
+            printf("---------------------- intial Grid ---------------\n");
+            printGrid(GlobalMatrix,MainMatrixsize,0);
+        }
         // save grid with particles, beginning state:
         saveGridToFile(GlobalMatrix, MainMatrixsize, 0, filename);
 
@@ -263,6 +259,12 @@ int main(int argc, char** argv) {
     //
     int new_layer = 0;
     int old_layer = 1;
+
+
+
+
+
+
 
 
 
@@ -397,13 +399,40 @@ int main(int argc, char** argv) {
     // ---------------------------------------------------- finished the Decryption of the grid: ----------------------------------
 
 
+
+
+
+
+
+
+
+
+
+
     if (my_id == 0) {
+        // get all subgrids from all processors
         gatherSubgrids(GlobalMatrix, BufferMatrix, SubMatrix, subGridSize,subGridLayers, MainMatrixsize, num_procs, processorGridSize, filename);
-        sprintf(filename, "%sdecrypting_grid_final.txt",path);
-        printf("%s: \n", filename);
-        printGrid(GlobalMatrix,MainMatrixsize,new_layer);
-        // save grid with particles:
-        saveGridToFile(GlobalMatrix, MainMatrixsize, new_layer, filename);
+        // redo the Flip from decryption
+        flipDirections(GlobalMatrix,MainMatrixsize,MainMatrixsize,2);
+        // reconstruc message:
+        // read message from Grid:
+        int index = 0;
+        for(int i = 0; i < MainMatrixsize; i++) {
+            for(int j = 0; j < MainMatrixsize; j++) {
+                if(index < octal_array_length) {
+                     octal_array[index++] = GlobalMatrix[i][j][0];
+                } else {
+                    break;
+                }
+            }
+        }
+
+        char *reconstructedMessage = generateStringFromOctalArray(octal_array, octal_array_length);
+        if(debug_mode) {
+            printf("reconstructed message from octal: %s \n", reconstructedMessage);
+        }
+        // Schreibe den rekonvertierten String in die Ausgabedatei
+        writeStringToFile(outputFilename, reconstructedMessage);
     }
     if (my_id != 0) {
         // send your submatrix
