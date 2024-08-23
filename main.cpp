@@ -9,7 +9,7 @@
 //#define GRID_SIZE 0 // lege die größe des grids fest
 
 #define collosion_on true
-#define debug_mode false
+#define debug_mode true
 int subGridLayers = 2;
 // Bits für die Partikelrichtungen (siehe Zustandsübergangstabelle)
 #define N 2 // 0010
@@ -72,7 +72,7 @@ void writeStringToFile(const char* filename, const char* content);
 
 int main(int argc, char* argv[]) {
 
-    int MainMatrixsize = 300;
+    int MainMatrixsize = 9;
     int numb_iterations = 50;
     const char* inputFilename = "Messages/original_message.txt";
     const char* outputFilename = "Messages/decrypted_message.txt";
